@@ -1,0 +1,6 @@
+{
+  "name": "Abbason Hub",
+  "description": "Multi-campus student marketplace for Nigerian universities. Safe student deals secured with Payluk Escrow and delivery verification codes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

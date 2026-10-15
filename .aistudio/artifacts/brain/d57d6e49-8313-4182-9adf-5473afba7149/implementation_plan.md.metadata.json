@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan for:\n1. Seller Dashboard 'My Earnings' section with pending balance calculations, 3% commission breakdown (capped at ₦2,000), realized payouts, and instant Nigerian bank/fintech switcher (OPay, PalmPay, Kuda, Moniepoint, and commercial banks with live search).\n2. Clean homepage footer: removing the large WhatsApp promo banner while retaining the subtle footer note and floating WhatsApp quick-action button with phone number 08022201727.\n3. Top header brand image replacement support next to 'Abbason Hub' with immediate custom image upload and persistent preview.",
+  "updatedAt": "2026-10-15T11:27:11.067418823Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
