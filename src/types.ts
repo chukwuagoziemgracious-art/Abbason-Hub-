@@ -6,9 +6,27 @@ export type ProductStatus = 'pending_review' | 'approved' | 'rejected';
 
 export type DeliveryOption = 'seller_delivers' | 'buyer_pickup' | 'both';
 
-export type OrderStatus = 'paid_awaiting_delivery' | 'delivered' | 'disputed' | 'cancelled';
+export type OrderStatus =
+  | 'awaiting_payment'
+  | 'scheduled'
+  | 'delivery_fee_paid'
+  | 'in_transit'
+  | 'delivered_pending_inspection'
+  | 'partially_paid'
+  | 'paid_completed'
+  | 'paid_awaiting_delivery'
+  | 'delivered'
+  | 'disputed'
+  | 'cancelled';
 
-export type PaymentStatus = 'escrow_held' | 'payout_released' | 'refunded';
+export type PaymentStatus =
+  | 'delivery_fee_paid'
+  | 'pending_inspection_pay'
+  | 'partially_paid'
+  | 'paid_completed'
+  | 'escrow_held'
+  | 'payout_released'
+  | 'refunded';
 
 export type DisputeStatus = 'open' | 'resolved_refund' | 'resolved_payout';
 
@@ -27,6 +45,7 @@ export interface Category {
   slug: string;
   subtitle: string;
   icon: string;
+  imageUrl?: string;
 }
 
 export interface SellerReview {
@@ -43,6 +62,16 @@ export interface SellerReview {
   verifiedPurchase: boolean;
 }
 
+export interface SellerProfile {
+  id: string;
+  storeName: string;
+  campusId: string;
+  campusName: string;
+  isVerifiedSeller: boolean;
+  isSuspended?: boolean;
+  subaccountVerified?: boolean;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -53,7 +82,9 @@ export interface User {
   campusName: string;
   hostel: string;
   isVerifiedSeller?: boolean;
-  sellerVerificationStatus?: 'not_applied' | 'pending' | 'verified' | 'rejected';
+  sellerVerificationStatus?: 'not_applied' | 'pending' | 'approved_pending_fee' | 'verified' | 'rejected' | 'removed';
+  removedPermanently?: boolean;
+  subaccountVerified?: boolean;
   storeName?: string;
   bio?: string;
   studentIdCardUrl?: string;
@@ -64,17 +95,43 @@ export interface User {
     bankName: string;
     accountNumberMasked: string;
     accountName: string;
+    bankCode?: string;
   };
+  bannedUntilMs?: number;
+  suspendedUntilMs?: number;
+  subaccountCode?: string;
   rating?: number;
   reviewsCount?: number;
   salesCount?: number;
+  hasSavedPhone?: boolean;
+  sellerPhoneSaved?: boolean;
+}
+
+export type DeliveryScheduleType = 'within_3_days' | 'within_7_days' | 'specific_days';
+export type DeliveryDayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+export type DeliveryTimeSlot = 'morning' | 'afternoon' | 'evening' | 'any';
+
+export type FulfillmentOption = 'delivery' | 'pickup';
+
+export interface PickupConfig {
+  locationKind: 'safe_checkpoint' | 'custom';
+  locationLabel: string;
+  days: (number | DeliveryDayOfWeek)[]; // 0-6 or 'monday'-'sunday'
+  timeSlot: string;
+  timeNote?: string;
+}
+
+export interface DeliverySchedule {
+  type: DeliveryScheduleType;
+  days?: number[]; // (0 = Sunday, 1 = Monday, ... 6 = Saturday)
+  specificDays?: DeliveryDayOfWeek[];
+  timeSlot: DeliveryTimeSlot;
 }
 
 export interface Product {
   id: string;
   sellerId: string;
   sellerName: string;
-  sellerPhone: string;
   sellerVerified: boolean;
   sellerRating?: number;
   sellerReviewCount?: number;
@@ -88,12 +145,15 @@ export interface Product {
   images: string[];
   stock: number;
   deliveryOption: DeliveryOption;
+  fulfillmentOptions?: FulfillmentOption[];
+  pickup?: PickupConfig;
   deliveryFee: number; // in Naira (₦)
   pickupLandmark: string;
   status: ProductStatus;
   rejectionReason?: string;
   createdAt: string;
   brand?: string;
+  deliverySchedule?: DeliverySchedule;
 }
 
 export interface CartItem {
@@ -101,43 +161,109 @@ export interface CartItem {
   quantity: number;
 }
 
+export interface OrderItem {
+  id: string;
+  itemCode: string; // e.g. "ITM-9A4B"
+  productId: string;
+  title: string;
+  price: number;
+  quantity: number;
+  image: string;
+  status: 'pending_inspection' | 'paid' | 'rejected';
+  paidAt?: string;
+  paidAmount?: number;
+  paymentReference?: string;
+}
+
+export interface OrderPartyContact {
+  name: string;
+  phone: string;
+  location?: string;
+  pickupLocation?: string;
+  pickupDate?: string;
+  timeSlot?: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
   buyerId: string;
   buyerName: string;
-  buyerPhone: string;
+  buyerPhone?: string;
   buyerHostel: string;
   sellerId: string;
   sellerName: string;
   campusId: string;
   campusName: string;
-  items: {
-    productId: string;
-    title: string;
-    price: number;
-    quantity: number;
-    image: string;
-  }[];
-  subtotal: number; // P
-  deliveryFee: number; // D
-  gatewayFee: number; // G (paid by buyer)
-  totalAmount: number; // P + D + G
-  platformCommission: number; // min(P * 0.03, 2000)
-  sellerPayoutAmount: number; // P - platformCommission + D
+  items: OrderItem[];
+  subtotal: number;
+  deliveryFee: number;
+  gatewayFee: number;
+  totalAmount: number;
+  upfrontDeliveryFee?: number;
+  upfrontGatewayFee?: number;
+  upfrontTotalPaid?: number;
+  itemsTotalDueOnDelivery?: number;
+  itemsTotalPaid?: number;
+  deliveryFeePaid?: boolean;
+  contactShared?: boolean;
+  agreedTime?: string;
+  cancelCutoffMs?: number;
+  goodsDue?: number;
+  goodsPaid?: number;
+  commissionCollected?: number;
+  platformCommission?: number;
+  sellerPayoutAmount?: number;
+  paymentMode?: string;
   fulfillmentType: 'seller_delivers' | 'buyer_pickup';
+  fulfillmentMethod?: 'delivery' | 'pickup' | 'buyer_pickup' | 'seller_delivers';
+  sellerPhone?: string;
+  pickupLandmark?: string;
   deliveryInstructions: string;
+  meetingPoint?: {
+    kind: 'safe_checkpoint' | 'custom';
+    label: string;
+  };
+  pickupDetails?: {
+    locationKind: 'safe_checkpoint' | 'custom';
+    locationLabel: string;
+    pickupDate: string;
+    timeSlot: string;
+  };
+  scheduledDate?: string;
+  deliveryDeadlineMs?: number;
+  contactRevealAtMs?: number;
+  timeSlot?: 'morning' | 'afternoon' | 'evening' | 'any';
   paymentMethod: 'card' | 'bank_transfer' | 'ussd';
   paymentStatus: PaymentStatus;
-  otpHash: string; // SHA-256 hash of (OTP + salt)
-  otpSalt: string;
-  otpExpiresAt: number;
-  otpFailedAttempts: number;
   status: OrderStatus;
-  deliveryOtpForBuyer?: string; // Plaintext OTP returned ONLY to the authenticated buyer!
+  sellerDefault?: boolean;
+  buyerReportedRefusal?: boolean;
+  sellerUnreachableReported?: boolean;
+  refund?: {
+    owedAmount?: number;
+    amountOwed?: number;
+    multiplier?: number;
+    status: 'owed' | 'paid_claimed' | 'confirmed' | 'disputed';
+    dueAt?: number;
+    bankAccount?: {
+      bankName: string;
+      accountNumber: string;
+      accountName: string;
+    };
+    disputeReason?: string;
+  };
+  refundAccount?: {
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+  };
+  cancelReason?: 'buyer_cancelled' | 'seller_cancelled' | 'seller_unreachable' | string;
+  buyerExplanation?: string;
   hasBuyerReviewed?: boolean;
   createdAt: string;
   deliveredAt?: string;
+  completedAt?: string;
 }
 
 export interface Complaint {
@@ -187,6 +313,7 @@ export interface SellerVerificationRequest {
   idDocumentType?: string;
   idCardPhotoUrl: string;
   bankName?: string;
+  bankCode?: string;
   accountNumber?: string;
   accountName?: string;
   categoriesToSell?: string;

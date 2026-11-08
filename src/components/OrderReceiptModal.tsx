@@ -1,21 +1,22 @@
 import React, { useState } from 'react';
 import { 
   X, 
-  ShieldCheck, 
   Copy, 
   CheckCircle2, 
-  AlertTriangle, 
   Phone, 
-  Clock, 
   Truck, 
-  MapPin,
-  Flag,
-  Download,
-  Check,
-  Star
+  Flag, 
+  Download, 
+  Check, 
+  Star, 
+  CreditCard, 
+  Loader2,
+  ShieldAlert,
+  Clock
 } from 'lucide-react';
-import { Order } from '../types';
+import { Order, OrderItem } from '../types';
 import { formatNaira, formatDate } from '../utils/currency';
+import { store } from '../services/store';
 
 interface OrderReceiptModalProps {
   order: Order | null;
@@ -25,44 +26,211 @@ interface OrderReceiptModalProps {
 }
 
 export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({
-  order,
+  order: initialOrder,
   onClose,
   onOpenDispute,
   onRateSeller,
 }) => {
-  const [copiedOtp, setCopiedOtp] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+  const [isPayingVendor, setIsPayingVendor] = useState(false);
+  const [payingItemId, setPayingItemId] = useState<string | null>(null);
+  const [paymentFeedback, setPaymentFeedback] = useState<string | null>(null);
+  const [rejectingItem, setRejectingItem] = useState<OrderItem | null>(null);
+  const [rejectReason, setRejectReason] = useState('Item faulty / not as described');
+  const [isRejecting, setIsRejecting] = useState(false);
 
-  if (!order) return null;
+  // Refund handshake state
+  const [refundBank, setRefundBank] = useState('PalmPay');
+  const [refundAccount, setRefundAccount] = useState('');
+  const [refundAccountName, setRefundAccountName] = useState(initialOrder?.buyerName || '');
+  const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
+  const [refundActionMessage, setRefundActionMessage] = useState<string | null>(null);
 
-  const isDelivered = order.status === 'delivered';
+  // Phase B Contact & Cancellation State
+  const [contactDetails, setContactDetails] = useState<{
+    sellerContact?: any;
+    buyerContact?: any;
+    contactShared: boolean;
+  } | null>(null);
+  const [isReportingUnreachable, setIsReportingUnreachable] = useState(false);
+  const [isCancellingOrder, setIsCancellingOrder] = useState(false);
 
-  const handleCopyCode = () => {
-    if (order.deliveryOtpForBuyer) {
-      navigator.clipboard.writeText(order.deliveryOtpForBuyer);
-      setCopiedOtp(true);
-      setTimeout(() => setCopiedOtp(false), 2500);
+  React.useEffect(() => {
+    if (initialOrder?.id) {
+      store.getOrderContact(initialOrder.id).then((res) => {
+        setContactDetails(res);
+      });
+      if (initialOrder.buyerName) {
+        setRefundAccountName(initialOrder.buyerName);
+      }
+    }
+  }, [initialOrder?.id]);
+
+  if (!initialOrder) return null;
+
+  // Read latest state from store in case an item was just paid
+  const order = store.getOrderById(initialOrder.id) || initialOrder;
+
+  const isCompleted = order.status === 'paid_completed' || order.status === 'delivered';
+  const isPartiallyPaid = order.status === 'partially_paid';
+
+  // Calculate unpaid items
+  const unpaidItems = order.items.filter((i) => i.status !== 'paid');
+  const unpaidTotal = unpaidItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+
+  const handleCopyCode = (code: string, id: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCodeId(id);
+    setTimeout(() => setCopiedCodeId(null), 2000);
+  };
+
+  const handleReportUnreachable = async () => {
+    if (!window.confirm('Report that seller did not answer or show up? Order will auto-cancel at deadline with no penalty to either party.')) return;
+    setIsReportingUnreachable(true);
+    try {
+      const res = await store.reportSellerUnreachable(order.id);
+      if (res.success) {
+        setPaymentFeedback(res.message || 'Report submitted. Order will cancel cleanly at deadline if seller remains unreachable.');
+      } else {
+        setPaymentFeedback(res.error || 'Failed to submit report');
+      }
+    } finally {
+      setIsReportingUnreachable(false);
+    }
+  };
+
+  const handleBuyerCancel = async () => {
+    if (!window.confirm('Cancel this order? If you paid an upfront delivery fee, you will receive a 1x refund by bank transfer.')) return;
+    setIsCancellingOrder(true);
+    try {
+      const res = await store.cancelOrder(order.id, 'buyer_cancelled');
+      if (res.success) {
+        setPaymentFeedback('Order cancelled successfully.');
+      } else {
+        setPaymentFeedback(res.error || 'Failed to cancel order.');
+      }
+    } finally {
+      setIsCancellingOrder(false);
+    }
+  };
+
+  const handlePayIndividualItem = async (item: OrderItem) => {
+    setPayingItemId(item.id);
+    setPaymentFeedback(null);
+    try {
+      const init = await store.initializePayment({
+        type: 'goods',
+        orderId: order.id,
+        itemIds: [item.id]
+      });
+
+      if (init.status && init.authorization_url) {
+        window.location.href = init.authorization_url;
+        return;
+      }
+
+      setPaymentFeedback(init.error || 'Payment initialization failed. Please try again.');
+    } catch (err: any) {
+      setPaymentFeedback(err.message || 'Payment processing error. Please try again.');
+    } finally {
+      setPayingItemId(null);
+    }
+  };
+
+  const handlePayVendorTotal = async () => {
+    setIsPayingVendor(true);
+    setPaymentFeedback(null);
+    try {
+      const unpaidItemIds = unpaidItems.map((i) => i.id);
+      const init = await store.initializePayment({
+        type: 'goods',
+        orderId: order.id,
+        itemIds: unpaidItemIds
+      });
+
+      if (init.status && init.authorization_url) {
+        window.location.href = init.authorization_url;
+        return;
+      }
+
+      setPaymentFeedback('Payment initialization failed. Please try again.');
+    } catch (err: any) {
+      setPaymentFeedback('Payment processing error. Please try again.');
+    } finally {
+      setIsPayingVendor(false);
+    }
+  };
+
+  const handleConfirmReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingItem) return;
+    setIsRejecting(true);
+    try {
+      const res = await store.rejectOrderItem(order.id, rejectingItem.id, rejectReason);
+      if (res.success) {
+        setPaymentFeedback(`Item "${rejectingItem.title}" marked as rejected. No goods payment required.`);
+        setRejectingItem(null);
+      } else {
+        setPaymentFeedback(res.error || 'Failed to reject item');
+      }
+    } catch (err: any) {
+      setPaymentFeedback(err.message || 'Error rejecting item');
+    } finally {
+      setIsRejecting(false);
+    }
+  };
+
+  const handleRegisterRefundBank = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!refundAccount || refundAccount.replace(/\D/g, '').length !== 10) {
+      setRefundActionMessage('Please enter a valid 10-digit NUBAN account number.');
+      return;
+    }
+    setIsSubmittingRefund(true);
+    try {
+      const res = await store.submitRefundBankDetails(order.id, {
+        bankName: refundBank,
+        accountNumber: refundAccount.replace(/\D/g, ''),
+        accountName: refundAccountName
+      });
+      if (res.success) {
+        setRefundActionMessage('Refund bank account saved. The seller will dispatch the refund.');
+      } else {
+        setRefundActionMessage(res.error || 'Failed to save account');
+      }
+    } finally {
+      setIsSubmittingRefund(false);
+    }
+  };
+
+  const handleConfirmRefund = async () => {
+    const res = await store.confirmRefundReceived(order.id);
+    if (res.success) {
+      setRefundActionMessage('Refund confirmed as received.');
+    } else {
+      setRefundActionMessage(res.error || 'Failed to confirm');
+    }
+  };
+
+  const handleDisputeRefund = async () => {
+    const res = await store.disputeRefund(order.id, 'Buyer did not receive bank transfer from seller.');
+    if (res.success) {
+      setRefundActionMessage('Refund disputed and forwarded to administrator review.');
+    } else {
+      setRefundActionMessage(res.error || 'Failed to dispute');
     }
   };
 
   const handleDownloadReceipt = () => {
     const receiptContent = `===========================================
 ABBASON HUB — OFFICIAL CAMPUS RECEIPT
-"Everything you imagined."
+"Inspect First · Pay On Delivery"
 ===========================================
 ORDER NUMBER: ${order.orderNumber}
 TRANSACTION DATE: ${new Date(order.createdAt).toLocaleString('en-NG')}
 CAMPUS: ${order.campusName}
-PAYMENT STATUS: CONFIRMED & SECURED IN PAYLUK ESCROW
-
--------------------------------------------
-YOUR SECRET DELIVERY CONFIRMATION CODE:
->>>  ${order.deliveryOtpForBuyer || '••••••'}  <<<
--------------------------------------------
-SECURITY INSTRUCTION:
-Do NOT share this code with the seller beforehand!
-Only provide this code in person after you physically 
-receive, inspect, and confirm your order is in good condition.
+PAYMENT STATUS: ${order.paymentStatus.toUpperCase()}
 
 BUYER DETAILS:
 Name: ${order.buyerName}
@@ -71,18 +239,15 @@ Delivery Destination: ${order.deliveryInstructions}
 
 SELLER DETAILS:
 Vendor / Store: ${order.sellerName}
-Contact Phone: +234 803 412 9081
 
-PURCHASED ITEMS:
-${order.items.map((i) => `• ${i.title} (x${i.quantity}) — ₦${(i.price * i.quantity).toLocaleString()}`).join('\n')}
+ITEMIZED TRACKING CODES & STATUS:
+${order.items.map((i) => `• [${i.itemCode}] ${i.title} (x${i.quantity}) — ₦${(i.price * i.quantity).toLocaleString()} [Status: ${i.status.toUpperCase()}]`).join('\n')}
 
 FINANCIAL BREAKDOWN:
-Subtotal: ₦${order.subtotal.toLocaleString()}
-Delivery Fee: ₦${order.deliveryFee.toLocaleString()}
-Payment Processing Fee: ₦${order.gatewayFee.toLocaleString()}
-TOTAL PAID: ₦${order.totalAmount.toLocaleString()}
-Payment Method: ${order.paymentMethod.toUpperCase()} (Online Web Payment)
-Platform Escrow: Secured by Payluk Escrow Vault
+Upfront Transport Fee Paid: ₦${(order.upfrontTotalPaid || order.deliveryFee).toLocaleString()}
+Items Total Due Upon Delivery: ₦${order.subtotal.toLocaleString()}
+Items Paid So Far: ₦${(order.itemsTotalPaid || 0).toLocaleString()}
+Floor Total: ₦${order.totalAmount.toLocaleString()}
 
 Need help? Contact: support@abbasonhub.com
 ===========================================`;
@@ -102,251 +267,505 @@ Need help? Contact: support@abbasonhub.com
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
       <div 
-        className="relative w-full max-w-xl rounded-3xl bg-[#0F172A] border-2 border-purple-800/80 shadow-2xl overflow-hidden my-auto max-h-[94vh] flex flex-col animate-fade-in"
+        className="relative w-full max-w-lg rounded-3xl bg-[#090D14] border border-white/[0.12] shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Bar */}
-        <div className="p-4 sm:p-5 border-b border-purple-950/80 bg-[#131b2e] flex items-center justify-between">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${isDelivered ? 'bg-emerald-400' : 'bg-emerald-400 animate-pulse'}`} />
-            <span className="text-xs uppercase font-bold tracking-wider text-emerald-400">
-              {isDelivered ? 'Order Delivered & Completed' : 'Payment Confirmed & Verified'}
-            </span>
+            <span className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-emerald-400' : 'bg-[#C8A96A] animate-pulse'}`} />
+            <h3 className="text-sm font-medium text-white font-serif">
+              Order #{order.orderNumber}
+            </h3>
+            <span className="text-[11px] text-[#8C9399]">· {order.sellerName}</span>
           </div>
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center border border-slate-800 transition-colors"
+            className="w-7 h-7 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-[#8C9399] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Scrollable Modal Body */}
-        <div className="overflow-y-auto p-4 sm:p-6 space-y-5">
-          {/* 1. PAYMENT CONFIRMATION MESSAGE */}
-          <div className="text-center space-y-2 py-2">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center mx-auto shadow-lg shadow-emerald-950/60 border border-emerald-300/40 text-slate-950">
-              <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
+        {/* Feedback Banner */}
+        {paymentFeedback && (
+          <div className="bg-emerald-950/90 border-b border-emerald-500/40 px-4 py-2.5 text-xs text-emerald-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{paymentFeedback}</span>
             </div>
-
-            <h2 className="text-2xl sm:text-3xl font-bold text-white font-serif tracking-tight">
-              {isDelivered ? 'Delivery Complete!' : 'Payment Successful!'}
-            </h2>
-
-            <p className="text-slate-300 text-xs sm:text-sm max-w-md mx-auto leading-relaxed">
-              We received your payment of{' '}
-              <strong className="text-[#f3c84b] font-bold tabular-nums">
-                {formatNaira(order.totalAmount)}
-              </strong>{' '}
-              for Order <strong className="text-white font-mono">#{order.orderNumber}</strong>. 
-              {isDelivered ? ' The order has been handed over and verified.' : ' Your funds are held securely in Payluk Escrow.'}
-            </p>
+            <button 
+              onClick={() => setPaymentFeedback(null)} 
+              className="text-emerald-400 hover:text-white text-[11px] cursor-pointer"
+            >
+              Dismiss
+            </button>
           </div>
+        )}
 
-          {/* 2. THE PROMINENT 6-DIGIT DELIVERY OTP CARD */}
-          <div className="rounded-3xl bg-gradient-to-b from-purple-950 via-[#1d1033] to-[#111827] border-2 border-[#f3c84b] p-5 sm:p-6 text-center shadow-2xl relative overflow-hidden ring-1 ring-[#f3c84b]/40">
-            <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-[#f3c84b]/10 blur-xl pointer-events-none" />
-
-            <div className="flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-widest text-[#f3c84b] mb-1">
-              <ShieldCheck className="w-4 h-4 text-[#f3c84b]" />
-              <span>{isDelivered ? 'Handshake Verification Code Used' : 'Your One-Time Delivery Confirmation Code'}</span>
+        {/* Body */}
+        <div className="overflow-y-auto p-5 space-y-4 text-xs">
+          {/* Always pay inside app warning banner */}
+          {!isCompleted && unpaidTotal > 0 && (
+            <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 flex items-center gap-2.5 text-amber-200 text-xs">
+              <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                <strong>Safety Policy:</strong> Always pay inside the app. Paying outside the app means no refund and can get your account closed.
+              </span>
             </div>
+          )}
 
-            <p className="text-[11px] text-slate-400 mb-3">
-              {isDelivered 
-                ? `Successfully verified with ${order.sellerName}. Payout has been released.`
-                : `Present this code to ${order.sellerName} only after you inspect your items in person.`}
-            </p>
-
-            {/* The Big 6-Digit Monospace Display */}
-            <div className="my-3 inline-flex items-center justify-center">
-              <div className="font-mono text-3xl sm:text-5xl font-black text-white tracking-[0.25em] bg-slate-950 px-6 sm:px-8 py-3 rounded-2xl border-2 border-purple-800 shadow-inner select-all">
-                {order.deliveryOtpForBuyer || '••••••'}
+          {/* Quick Pay Bar (if unpaid items remain) */}
+          {!isCompleted && unpaidTotal > 0 && (
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-[#C8A96A]/30 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider">Pay on Inspection (All Items)</div>
+                <div className="text-lg font-mono text-[#C8A96A] font-semibold">{formatNaira(unpaidTotal)}</div>
               </div>
-            </div>
-
-            {/* Quick-Save Action Row */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 mt-4 pt-3 border-t border-purple-900/60">
-              {!isDelivered && (
-                <button
-                  type="button"
-                  onClick={handleCopyCode}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#f3c84b] hover:bg-[#eab308] text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
-                >
-                  {copiedOtp ? (
-                    <>
-                      <Check className="w-4 h-4 text-emerald-950" />
-                      <span>Copied to Clipboard!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>Copy 6-Digit Code</span>
-                    </>
-                  )}
-                </button>
-              )}
 
               <button
                 type="button"
-                onClick={handleDownloadReceipt}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-purple-950 hover:bg-purple-900 border border-purple-700/70 text-purple-200 hover:text-white font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                onClick={handlePayVendorTotal}
+                disabled={isPayingVendor}
+                className="px-4 py-2 rounded-xl bg-[#C8A96A] hover:bg-[#b89858] text-black font-semibold text-xs flex items-center gap-1.5 shadow transition-colors cursor-pointer disabled:opacity-60"
               >
-                {downloaded ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    <span>Receipt Downloaded!</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4 text-[#f3c84b]" />
-                    <span>Download Receipt Summary</span>
-                  </>
-                )}
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>{isPayingVendor ? 'Opening Paystack...' : `Pay ${formatNaira(unpaidTotal)} via Paystack`}</span>
               </button>
             </div>
+          )}
 
-            {!isDelivered && (
-              <div className="mt-4 p-3 rounded-xl bg-amber-950/70 border border-amber-600/60 text-amber-200 text-xs text-left flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <div className="text-[11px] leading-relaxed">
-                  <strong>CAMPUS SECURITY RULE:</strong> Never send this code over WhatsApp or phone call prior to handover. When the seller meets you, inspect your order thoroughly. Once satisfied, give them the code so they can unlock their payout.
+          {/* Refund Handshake Section (if refund exists) */}
+          {order.refund && (
+            <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-amber-200 flex items-center gap-2">
+                  <span>Delivery Fee Refund</span>
+                  <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 font-mono text-[10px] border border-amber-500/40">
+                    {(order.refund.multiplier || 1) > 1 ? `${order.refund.multiplier}x Penalty` : '1x Refund'}
+                  </span>
+                </div>
+                <div className="text-base font-bold text-amber-400 font-mono">
+                  {formatNaira(order.refund.owedAmount || order.refund.amountOwed || 0)}
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* 3. FULFILLMENT & SELLER COORDINATION */}
-          <div className="p-4 rounded-2xl bg-[#121a2c] border border-purple-950/80 text-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-slate-300 uppercase tracking-wider text-[11px]">
-                Campus Handover Instructions
-              </span>
-              <span className="text-[#f3c84b] font-medium flex items-center gap-1">
-                {order.fulfillmentType === 'seller_delivers' ? (
-                  <>
-                    <Truck className="w-3.5 h-3.5" />
-                    <span>Hostel Drop-off</span>
-                  </>
-                ) : (
-                  <>
-                    <MapPin className="w-3.5 h-3.5" />
-                    <span>Campus Pickup</span>
-                  </>
-                )}
-              </span>
-            </div>
+              {refundActionMessage && (
+                <div className="p-2 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-200 text-xs">
+                  {refundActionMessage}
+                </div>
+              )}
 
-            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-300">
-              <div className="text-[10px] uppercase text-slate-500 font-semibold">Your Delivery Address</div>
-              <div className="text-xs text-white font-medium mt-0.5">{order.deliveryInstructions}</div>
-            </div>
+              {/* Status 1: Owed - prompt buyer for refund account */}
+              {order.refund.status === 'owed' && (
+                <div className="space-y-2">
+                  <p className="text-slate-300 text-xs font-light">
+                    {order.refundAccount
+                      ? `Refund destination saved: ${order.refundAccount.bankName} (******${order.refundAccount.accountNumber.slice(-4)}). Seller has 24h to dispatch bank transfer.`
+                      : 'Seller owes you a refund by direct bank transfer outside the app. Provide your Nigerian bank details below:'}
+                  </p>
+                  {!order.refundAccount && (
+                    <form onSubmit={handleRegisterRefundBank} className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={refundBank}
+                          onChange={(e) => setRefundBank(e.target.value)}
+                          placeholder="Bank / Wallet Name"
+                          className="bg-black/50 border border-white/[0.1] rounded-xl px-2.5 py-1.5 text-xs text-white"
+                          required
+                        />
+                        <input
+                          type="text"
+                          maxLength={10}
+                          value={refundAccount}
+                          onChange={(e) => setRefundAccount(e.target.value.replace(/\D/g, ''))}
+                          placeholder="10-digit NUBAN"
+                          className="bg-black/50 border border-white/[0.1] rounded-xl px-2.5 py-1.5 text-xs text-white font-mono"
+                          required
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={isSubmittingRefund}
+                        className="w-full py-2 rounded-xl bg-[#C8A96A] hover:bg-[#b89858] text-black font-semibold text-xs cursor-pointer shadow"
+                      >
+                        {isSubmittingRefund ? 'Saving...' : 'Save Refund Bank Account'}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
 
-            <div className="flex items-center justify-between pt-1">
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Verified Vendor</span>
-                <span className="font-medium text-white">{order.sellerName}</span>
-              </div>
-              <a
-                href="tel:+2348034129081"
-                className="px-3 py-1.5 rounded-lg bg-purple-950 hover:bg-purple-900 border border-purple-800 text-[#f3c84b] font-medium flex items-center gap-1 text-[11px]"
-              >
-                <Phone className="w-3 h-3" />
-                <span>Call Seller</span>
-              </a>
-            </div>
-          </div>
-
-          {/* 4. PURCHASED ITEMS LIST */}
-          <div className="space-y-2">
-            <span className="font-bold text-slate-400 uppercase tracking-wider text-[11px]">
-              Purchased Items
-            </span>
-            {order.items.map((item, idx) => (
-              <div
-                key={idx}
-                className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between text-xs"
-              >
-                <div className="flex items-center gap-2.5">
-                  <img src={item.image} alt="" className="w-10 h-10 rounded-lg object-cover bg-slate-800" />
-                  <div>
-                    <div className="text-white font-medium truncate max-w-[200px]">{item.title}</div>
-                    <div className="text-slate-400 text-[11px]">Qty: {item.quantity}</div>
+              {/* Status 2: Paid Claimed - prompt buyer to confirm or dispute */}
+              {order.refund.status === 'paid_claimed' && (
+                <div className="space-y-2">
+                  <p className="text-emerald-200 text-xs font-light">
+                    The seller has marked this refund as dispatched via bank transfer. Please check your bank account.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleConfirmRefund}
+                      className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs cursor-pointer shadow"
+                    >
+                      I Received It
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDisputeRefund}
+                      className="flex-1 py-2 rounded-xl bg-rose-900 hover:bg-rose-800 text-rose-100 font-semibold text-xs cursor-pointer"
+                    >
+                      I Did Not Receive It
+                    </button>
                   </div>
                 </div>
-                <div className="font-bold text-white tabular-nums">
-                  {formatNaira(item.price * item.quantity)}
+              )}
+
+              {/* Status 3: Confirmed */}
+              {order.refund.status === 'confirmed' && (
+                <div className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-medium flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>Refund confirmed received into your bank account.</span>
                 </div>
-              </div>
-            ))}
+              )}
+
+              {/* Status 4: Disputed */}
+              {order.refund.status === 'disputed' && (
+                <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs font-medium flex items-center gap-2">
+                  <Flag className="w-4 h-4 text-rose-400" />
+                  <span>Refund disputed. Under investigation by administrator.</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Simple Items List */}
+          <div className="space-y-2">
+            <div className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">
+              Items in Delivery
+            </div>
+
+            {order.items.map((item) => {
+              const isItemPaid = item.status === 'paid';
+              const isItemRejected = item.status === 'rejected';
+              const isProcessingThis = payingItemId === item.id;
+              const itemTotal = item.price * item.quantity;
+
+              return (
+                <div
+                  key={item.id}
+                  className="p-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img 
+                      src={item.image} 
+                      alt="" 
+                      className="w-10 h-10 rounded-xl object-cover bg-slate-800 shrink-0" 
+                    />
+                    <div className="min-w-0">
+                      <div className="text-white font-medium truncate text-xs">{item.title}</div>
+                      <div className="text-[11px] text-slate-400">
+                        Qty: {item.quantity} · {formatNaira(itemTotal)}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="px-1.5 py-0.5 rounded bg-[#020406] border border-[#C8A96A]/30 text-[#C8A96A] font-mono text-[10px]">
+                          {item.itemCode}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyCode(item.itemCode, item.id)}
+                          className="text-[#8C9399] hover:text-[#C8A96A] text-[10px] flex items-center gap-0.5 cursor-pointer"
+                        >
+                          {copiedCodeId === item.id ? (
+                            <span className="text-emerald-400">Copied</span>
+                          ) : (
+                            <>
+                              <Copy className="w-2.5 h-2.5" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    {isItemPaid ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-medium">
+                        <Check className="w-3 h-3" />
+                        <span>Paid</span>
+                      </span>
+                    ) : isItemRejected ? (
+                      <span className="inline-flex items-center px-2 py-1 rounded-lg bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[10px]">
+                        Rejected
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setRejectingItem(item)}
+                          className="px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 border border-white/[0.08] text-[10px] transition-colors cursor-pointer"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePayIndividualItem(item)}
+                          disabled={isProcessingThis}
+                          className="px-2.5 py-1 rounded-lg bg-[#C8A96A] hover:bg-[#b89858] text-black font-semibold text-[10px] flex items-center gap-1 shadow transition-colors cursor-pointer disabled:opacity-60"
+                        >
+                          {isProcessingThis ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <CreditCard className="w-2.5 h-2.5" />}
+                          <span>Pay {formatNaira(itemTotal)}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          {/* 5. ITEMIZED FINANCIAL RECEIPT */}
-          <div className="p-3.5 rounded-2xl bg-[#121a2c] border border-purple-950/80 text-xs space-y-1.5">
-            <div className="flex justify-between text-slate-400">
-              <span>Items Subtotal</span>
-              <span className="text-slate-200 tabular-nums">{formatNaira(order.subtotal)}</span>
-            </div>
-            {order.deliveryFee > 0 && (
-              <div className="flex justify-between text-slate-400">
-                <span>Campus Delivery Fee</span>
-                <span className="text-slate-200 tabular-nums">{formatNaira(order.deliveryFee)}</span>
+          {/* Shared Contact & Agreed Delivery Details Card */}
+          {(() => {
+            const isContactShared = order.contactShared || contactDetails?.contactShared;
+            const sellerPhone = contactDetails?.sellerContact?.phone || order.sellerPhone;
+            const sellerLocation = contactDetails?.sellerContact?.location || order.pickupLandmark;
+            const canCancel = order.status !== 'cancelled' && !isCompleted && !order.agreedTime && (!order.cancelCutoffMs || Date.now() < order.cancelCutoffMs);
+            const isPickupOrFree = order.fulfillmentMethod === 'buyer_pickup' || (order.fulfillmentMethod === 'seller_delivers' && (order.deliveryFee || 0) === 0);
+
+            return (
+              <div className="space-y-3">
+                {/* Contact & Meetup Card */}
+                <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-[#C8A96A] tracking-wider">
+                      Fulfillment & Contact
+                    </span>
+                    {store.isOrderOverdue(order) && (
+                      <span className="px-2 py-0.5 rounded bg-rose-950 border border-rose-500/50 text-rose-300 font-bold text-[10px]">
+                        Overdue Delivery
+                      </span>
+                    )}
+                  </div>
+
+                  {isContactShared ? (
+                    <div className="space-y-2 pt-1 border-t border-white/[0.06]">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="text-slate-400 text-[11px] block">Vendor</span>
+                          <span className="text-white font-medium text-xs">{order.sellerName}</span>
+                        </div>
+                        {sellerPhone && (
+                          <a
+                            href={`tel:${sellerPhone}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-colors cursor-pointer shadow"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>Call Seller ({sellerPhone})</span>
+                          </a>
+                        )}
+                      </div>
+
+                      {sellerLocation && (
+                        <div className="text-slate-300 flex items-center gap-1.5 text-[11px]">
+                          <Truck className="w-3.5 h-3.5 text-[#C8A96A] shrink-0" />
+                          <span>Meeting / Pickup Spot: <strong className="text-white">{sellerLocation}</strong></span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-[#8C9399] text-[11px] font-light">
+                      Seller phone and pickup location will be unlocked immediately once your transport commitment is confirmed.
+                    </div>
+                  )}
+
+                  {/* Agreed Delivery Time if set by seller */}
+                  {order.agreedTime && (
+                    <div className="p-2 rounded-xl bg-[#C8A96A]/10 border border-[#C8A96A]/30 text-xs flex items-center gap-2 text-white">
+                      <Clock className="w-4 h-4 text-[#C8A96A] shrink-0" />
+                      <span>
+                        <strong>Agreed Delivery Time:</strong> {order.agreedTime}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Cancellation cutoff line */}
+                  <div className="pt-2 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <div>
+                      {order.status === 'cancelled' ? (
+                        <span className="text-slate-400">Order cancelled ({order.cancelReason || 'no penalty'}).</span>
+                      ) : isCompleted ? (
+                        <span className="text-emerald-400">Order completed and inspected.</span>
+                      ) : canCancel ? (
+                        <span className="text-slate-300">
+                          You can cancel until{' '}
+                          <strong className="text-white">
+                            {order.cancelCutoffMs 
+                              ? `${new Date(order.cancelCutoffMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, ${new Date(order.cancelCutoffMs).toLocaleDateString()}`
+                              : 'the seller sets an agreed delivery time'}
+                          </strong>.
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 italic">
+                          You will not be able to cancel this order ({order.agreedTime ? 'seller has set agreed delivery time' : 'cancellation window closed'}).
+                        </span>
+                      )}
+                    </div>
+
+                    {canCancel && (
+                      <button
+                        type="button"
+                        onClick={handleBuyerCancel}
+                        disabled={isCancellingOrder}
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 border border-white/[0.08] text-[10px] transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        {isCancellingOrder ? 'Cancelling...' : 'Cancel Order'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Rule P4b: Seller did not answer / show up button for pickup/free-delivery */}
+                  {isPickupOrFree && order.status !== 'cancelled' && !isCompleted && (
+                    <div className="pt-2 border-t border-white/[0.06]">
+                      <button
+                        type="button"
+                        onClick={handleReportUnreachable}
+                        disabled={isReportingUnreachable || order.sellerUnreachableReported}
+                        className="w-full py-2 rounded-xl bg-white/[0.03] hover:bg-rose-950/40 text-slate-300 hover:text-rose-300 border border-white/[0.08] text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      >
+                        <ShieldAlert className="w-3.5 h-3.5 text-[#C8A96A]" />
+                        <span>
+                          {order.sellerUnreachableReported 
+                            ? 'Unreachable Seller Reported (Auto-cancels cleanly at deadline)' 
+                            : 'Seller did not answer / did not show up'}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-            <div className="flex justify-between text-slate-400">
-              <span className="text-purple-300">Payment Gateway Fee (1.5% + ₦100)</span>
-              <span className="text-slate-200 tabular-nums">{formatNaira(order.gatewayFee)}</span>
+            );
+          })()}
+
+          {/* Simple Totals */}
+          <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-1.5 text-xs text-slate-400">
+            <div className="flex justify-between">
+              <span>Transport fee (Paid)</span>
+              <span className="text-slate-200 font-mono">{formatNaira(order.upfrontTotalPaid || order.deliveryFee)}</span>
             </div>
-            <div className="border-t border-purple-950 pt-1.5 flex justify-between font-bold text-white">
-              <span>Total Paid via Web Checkout</span>
-              <span className="text-base font-extrabold text-[#f3c84b] tabular-nums">
-                {formatNaira(order.totalAmount)}
-              </span>
+            <div className="flex justify-between">
+              <span>Goods settled so far</span>
+              <span className="text-emerald-400 font-mono">{formatNaira(order.itemsTotalPaid || 0)}</span>
             </div>
-            <div className="text-[10px] text-slate-400 pt-1">
-              Date: {formatDate(order.createdAt)} · Escrow: Payluk Escrow Vault
+            <div className="border-t border-white/[0.06] pt-1.5 flex justify-between text-white font-medium">
+              <span>Order Total</span>
+              <span className="text-[#C8A96A] font-mono">{formatNaira(order.totalAmount)}</span>
             </div>
           </div>
         </div>
 
-        {/* Modal Footer Actions */}
-        <div className="p-4 sm:p-5 border-t border-purple-950 bg-[#131b2e] flex items-center gap-3">
-          {!isDelivered && (
+        {/* Footer Actions */}
+        <div className="p-4 border-t border-white/[0.08] flex items-center gap-2 bg-white/[0.01]">
+          <button
+            type="button"
+            onClick={handleDownloadReceipt}
+            className="py-2.5 px-3 rounded-xl border border-white/[0.12] hover:border-[#C8A96A] text-slate-300 hover:text-[#C8A96A] text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            {downloaded ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Download className="w-3.5 h-3.5" />}
+            <span>Receipt</span>
+          </button>
+
+          {!isCompleted && (
             <button
               onClick={() => {
                 onClose();
                 onOpenDispute(order);
               }}
-              className="py-3 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="py-2.5 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-rose-300 text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Flag className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Report Issue</span>
+              <span>Report Issue</span>
             </button>
           )}
 
-          {isDelivered && onRateSeller && (
+          {isCompleted && onRateSeller && (
             <button
               onClick={() => {
                 onClose();
                 onRateSeller(order);
               }}
-              className="py-3 px-4 rounded-xl bg-[#f3c84b] hover:bg-[#eab308] text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="py-2.5 px-3 rounded-xl bg-[#C8A96A] text-[#020406] font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <Star className="w-4 h-4 fill-current" />
-              <span>{order.hasBuyerReviewed ? 'View Your Review' : 'Rate Seller'}</span>
+              <Star className="w-3.5 h-3.5 fill-current" />
+              <span>{order.hasBuyerReviewed ? 'Review' : 'Rate Seller'}</span>
             </button>
           )}
 
           <button
             onClick={onClose}
-            className="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs sm:text-sm text-center transition-colors shadow-md cursor-pointer"
+            className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs text-center transition-colors cursor-pointer"
           >
-            Done · Return to Campus Hub
+            Done
           </button>
         </div>
+
+        {/* Item Rejection Dialog */}
+        {rejectingItem && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-3xl bg-[#0F172A] border border-rose-900/80 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-white text-sm">Reject Faulty Item</h3>
+                <button
+                  onClick={() => setRejectingItem(null)}
+                  className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-300">
+                Rejecting <strong>{rejectingItem.title}</strong> during physical handover inspection. No goods payment will be charged for this item.
+              </p>
+
+              <form onSubmit={handleConfirmReject} className="space-y-3">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
+                    Reason for Rejection *
+                  </label>
+                  <textarea
+                    rows={2}
+                    required
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="e.g. Broken screen, wrong size, defective..."
+                    className="w-full bg-[#0B1120] border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRejectingItem(null)}
+                    className="flex-1 py-2 rounded-xl bg-slate-800 text-slate-300 font-medium text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isRejecting}
+                    className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs disabled:opacity-50"
+                  >
+                    {isRejecting ? 'Rejecting...' : 'Confirm Rejection'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

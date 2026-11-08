@@ -13,7 +13,7 @@ interface BankSwitcherModalProps {
     accountNumber: string;
     accountName: string;
     bankCode?: string;
-  }) => void;
+  }) => Promise<{ success?: boolean; error?: string; message?: string } | void> | void;
 }
 
 export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
@@ -32,7 +32,8 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
   );
   const [accountName, setAccountName] = useState(currentAccountName || '');
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const filteredBanks = useMemo(() => {
     return searchNigerianBanks(searchQuery);
@@ -44,9 +45,10 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
 
     const effectiveBankName = selectedBank === 'other' ? customBankName.trim() : selectedBank;
 
@@ -68,45 +70,61 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
 
     const matchedBank = NIGERIAN_BANKS.find((b) => b.name === effectiveBankName);
 
-    onSave({
-      bankName: effectiveBankName,
-      accountNumber: cleanAcc,
-      accountName: accountName.trim(),
-      bankCode: matchedBank?.code
-    });
+    setIsSubmitting(true);
+    try {
+      const res = await onSave({
+        bankName: effectiveBankName,
+        accountNumber: cleanAcc,
+        accountName: accountName.trim(),
+        bankCode: matchedBank?.code
+      });
 
-    setSuccess(true);
-    setTimeout(() => {
-      setSuccess(false);
-      onClose();
-    }, 1200);
+      if (res && res.error) {
+        setError(res.error);
+        setIsSubmitting(false);
+        return;
+      }
+
+      setSuccess(
+        (res && res.message) ||
+          'Bank change request submitted for Administrator verification & Paystack setup.'
+      );
+      setTimeout(() => {
+        setSuccess(null);
+        onClose();
+      }, 2500);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to submit bank change request');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
       <div
-        className="relative w-full max-w-lg rounded-3xl bg-[#0F172A] border border-purple-900/70 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
+        className="relative w-full max-w-lg rounded-3xl bg-[#0B1120] border border-white/[0.1] shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-purple-950/80 bg-[#131b2e] flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-950 to-slate-900 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+            <div className="w-10 h-10 rounded-2xl bg-[#C8A96A]/15 border border-[#C8A96A]/30 flex items-center justify-center text-[#C8A96A]">
               <Building2 className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white font-serif">
-                Change Settlement Bank / Payout Account
+              <h3 className="text-base font-medium text-white font-serif">
+                Request Settlement Bank Change
               </h3>
-              <p className="text-xs text-slate-400">
-                Supports all Nigerian banks & fintechs (PalmPay, OPay, Moniepoint, etc.)
+              <p className="text-xs text-[#8C9399]">
+                Bank changes require administrator approval & Paystack name verification
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center border border-slate-800 transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white flex items-center justify-center border border-white/[0.08] transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -124,7 +142,7 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
           {success && (
             <div className="p-3 rounded-xl bg-emerald-950/90 border border-emerald-500/60 text-emerald-200 flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="font-semibold">Payout bank updated successfully!</span>
+              <span className="font-semibold">{success}</span>
             </div>
           )}
 
@@ -195,16 +213,16 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
                       setSelectedBank(bank.name);
                       setCustomBankName('');
                     }}
-                    className={`w-full p-2 rounded-lg text-left transition-colors flex items-center justify-between text-xs cursor-pointer ${
+                    className={`w-full p-2 rounded-xl text-left transition-colors flex items-center justify-between text-xs cursor-pointer ${
                       isSelected
-                        ? 'bg-purple-950/60 text-[#f3c84b] font-semibold'
-                        : 'text-slate-300 hover:bg-slate-900'
+                        ? 'bg-[#C8A96A]/20 text-[#C8A96A] font-medium'
+                        : 'text-slate-300 hover:bg-white/[0.04]'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <div
                         className="w-5 h-5 rounded flex items-center justify-center font-bold text-[9px] text-white shrink-0"
-                        style={{ backgroundColor: bank.color || '#4c1d95' }}
+                        style={{ backgroundColor: bank.color || '#C8A96A' }}
                       >
                         {bank.logoInitial}
                       </div>
@@ -213,7 +231,7 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
                         ({bank.category})
                       </span>
                     </div>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-[#f3c84b] shrink-0 ml-2" />}
+                    {isSelected && <Check className="w-3.5 h-3.5 text-[#C8A96A] shrink-0 ml-2" />}
                   </button>
                 );
               })}
@@ -222,21 +240,21 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedBank('other')}
-                className={`w-full p-2 rounded-lg text-left transition-colors flex items-center justify-between text-xs cursor-pointer ${
+                className={`w-full p-2 rounded-xl text-left transition-colors flex items-center justify-between text-xs cursor-pointer ${
                   selectedBank === 'other'
-                    ? 'bg-purple-950/60 text-[#f3c84b] font-semibold'
-                    : 'text-slate-400 hover:bg-slate-900'
+                    ? 'bg-[#C8A96A]/20 text-[#C8A96A] font-medium'
+                    : 'text-slate-400 hover:bg-white/[0.04]'
                 }`}
               >
                 <span>+ Other Nigerian Bank / Microfinance Bank</span>
-                {selectedBank === 'other' && <Check className="w-3.5 h-3.5 text-[#f3c84b]" />}
+                {selectedBank === 'other' && <Check className="w-3.5 h-3.5 text-[#C8A96A]" />}
               </button>
             </div>
           </div>
 
           {selectedBank === 'other' && (
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-300">
+              <label className="text-[11px] font-medium text-slate-300">
                 Enter Bank / Institution Name
               </label>
               <input
@@ -244,7 +262,7 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
                 value={customBankName}
                 onChange={(e) => setCustomBankName(e.target.value)}
                 placeholder="e.g. Hope PSBank, Sparkle MFB, etc."
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:border-[#f3c84b]"
+                className="w-full px-3 py-2 rounded-xl bg-[#0B1120] border border-white/[0.08] text-white placeholder-slate-500 focus:outline-none focus:border-[#C8A96A]"
                 required
               />
             </div>
@@ -253,7 +271,7 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
           {/* Account Number */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-bold text-slate-300">
+              <label className="text-[11px] font-medium text-slate-300">
                 10-Digit NUBAN Account Number / Wallet Number
               </label>
               <span className="text-[10px] text-slate-500">For OPay/PalmPay: usually your phone number</span>
@@ -264,14 +282,14 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
               value={accountNumber}
               onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
               placeholder="e.g. 8066950607 or 0123456789"
-              className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono tracking-wider placeholder-slate-500 focus:outline-none focus:border-[#f3c84b]"
+              className="w-full px-3 py-2.5 rounded-xl bg-[#0B1120] border border-white/[0.08] text-white font-mono tracking-wider placeholder-slate-500 focus:outline-none focus:border-[#C8A96A]"
               required
             />
           </div>
 
           {/* Account Name */}
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-300">
+            <label className="text-[11px] font-medium text-slate-300">
               Account Holder Name (As registered with bank)
             </label>
             <input
@@ -279,19 +297,19 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
               value={accountName}
               onChange={(e) => setAccountName(e.target.value)}
               placeholder="e.g. Chukwuagoziem Gracious / Emeka Okonkwo"
-              className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:border-[#f3c84b]"
+              className="w-full px-3 py-2.5 rounded-xl bg-[#0B1120] border border-white/[0.08] text-white placeholder-slate-500 focus:outline-none focus:border-[#C8A96A]"
               required
             />
           </div>
 
           {/* Safety & Non-Custodial Note */}
-          <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-900/40 text-[11px] text-amber-200/90 leading-relaxed space-y-1">
-            <div className="flex items-center gap-1.5 font-bold text-amber-300">
+          <div className="p-3 rounded-2xl bg-white/[0.03] border border-[#C8A96A]/30 text-[11px] text-[#8C9399] leading-relaxed space-y-1">
+            <div className="flex items-center gap-1.5 font-medium text-[#C8A96A]">
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>Transparent Settlement Notice</span>
             </div>
-            <p>
-              Abbason Hub does not hold your funds. Payouts are dispatched directly to your designated bank account once the buyer verifies their 6-digit delivery OTP in person.
+            <p className="font-light">
+              Abbason Hub does not hold your funds. Payouts are dispatched directly via Paystack subaccount split to your verified bank account once the student inspects and pays for the item on delivery.
             </p>
           </div>
 
@@ -300,16 +318,24 @@ export const BankSwitcherModal: React.FC<BankSwitcherModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 font-semibold cursor-pointer border border-slate-800"
+              disabled={isSubmitting}
+              className="flex-1 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 font-medium cursor-pointer border border-white/[0.08] disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 py-2.5 rounded-xl bg-[#f3c84b] hover:bg-[#eab308] text-slate-950 font-bold flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-transform active:scale-95"
+              disabled={isSubmitting}
+              className="flex-1 py-2.5 rounded-xl bg-[#C8A96A] hover:bg-[#b89858] text-black font-medium flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-transform active:scale-95 disabled:opacity-60"
             >
-              <span>Save Bank Account</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              {isSubmitting ? (
+                <span>Submitting Request...</span>
+              ) : (
+                <>
+                  <span>Submit Bank Change Request</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
             </button>
           </div>
         </form>

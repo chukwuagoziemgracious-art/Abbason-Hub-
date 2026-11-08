@@ -68,12 +68,12 @@ export const RateSellerModal: React.FC<RateSellerModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
       <div
-        className="relative w-full max-w-md rounded-3xl bg-[#0F172A] border border-purple-900/70 shadow-2xl overflow-hidden my-auto p-5 sm:p-6"
+        className="relative w-full max-w-md rounded-3xl bg-[#0B1120] border border-white/[0.1] shadow-2xl overflow-hidden my-auto p-5 sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center border border-slate-800 transition-colors"
+          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white flex items-center justify-center border border-white/[0.08] transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
@@ -83,35 +83,35 @@ export const RateSellerModal: React.FC<RateSellerModalProps> = ({
             <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center border border-emerald-500/40 animate-pulse">
               <CheckCircle2 className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-bold text-white font-serif">Review Published!</h3>
-            <p className="text-xs text-slate-300 max-w-xs mx-auto">
+            <h3 className="text-lg font-medium text-white font-serif">Review Published!</h3>
+            <p className="text-xs text-[#8C9399] max-w-xs mx-auto font-light">
               Thank you for contributing to campus trust on Abbason Hub. Your review is now visible to other students.
             </p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-xl bg-purple-950 border border-purple-800 flex items-center justify-center text-[#f3c84b]">
-                <Star className="w-5 h-5 fill-[#f3c84b]" />
+              <div className="w-9 h-9 rounded-2xl bg-[#C8A96A]/15 border border-[#C8A96A]/30 flex items-center justify-center text-[#C8A96A]">
+                <Star className="w-5 h-5 fill-[#C8A96A]" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white font-serif">Rate Your Seller</h3>
-                <p className="text-[11px] text-slate-400">
+                <h3 className="text-base font-medium text-white font-serif">Rate Your Seller</h3>
+                <p className="text-[11px] text-[#8C9399]">
                   Order #{order.orderNumber} · {order.sellerName}
                 </p>
               </div>
             </div>
 
             {/* Seller Info Card */}
-            <div className="p-3 rounded-2xl bg-purple-950/40 border border-purple-900/60 flex items-center justify-between text-xs">
+            <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-white">{order.sellerName}</span>
+                <span className="font-medium text-white">{order.sellerName}</span>
                 <span className="flex items-center gap-0.5 text-emerald-400 text-[10px] bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/30">
                   <ShieldCheck className="w-3 h-3" />
                   Verified Vendor
                 </span>
               </div>
-              <span className="text-[11px] text-purple-300 font-mono">
+              <span className="text-[11px] text-[#C8A96A] font-mono">
                 {order.items.length} item(s) delivered
               </span>
             </div>
@@ -132,14 +132,14 @@ export const RateSellerModal: React.FC<RateSellerModalProps> = ({
                     <Star
                       className={`w-8 h-8 transition-colors ${
                         star <= currentDisplayRating
-                          ? 'text-[#f3c84b] fill-[#f3c84b] drop-shadow-[0_0_8px_rgba(243,200,75,0.4)]'
+                          ? 'text-[#C8A96A] fill-[#C8A96A] drop-shadow-[0_0_8px_rgba(200,169,106,0.4)]'
                           : 'text-slate-700'
                       }`}
                     />
                   </button>
                 ))}
               </div>
-              <p className="text-xs font-medium text-amber-300 h-5">
+              <p className="text-xs font-medium text-[#C8A96A] h-5">
                 {getRatingFeedback(currentDisplayRating)}
               </p>
             </div>
@@ -154,8 +154,8 @@ export const RateSellerModal: React.FC<RateSellerModalProps> = ({
                 onChange={(e) => setComment(e.target.value)}
                 required
                 rows={3}
-                placeholder="e.g. Delivered on time at hostel gate, let me test the gadget before sharing OTP, very polite student seller..."
-                className="w-full bg-[#0B1120] border border-slate-800 focus:border-[#f3c84b] rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none"
+                placeholder="e.g. Delivered on time at hostel gate, let me test the gadget before paying, very polite student seller..."
+                className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none"
               />
             </div>
 
@@ -163,7 +163,7 @@ export const RateSellerModal: React.FC<RateSellerModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting || !comment.trim()}
-              className="w-full py-3 rounded-xl bg-[#f3c84b] hover:bg-[#eab308] disabled:opacity-50 text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-transform active:scale-[0.98] shadow-lg shadow-[#f3c84b]/20 cursor-pointer"
+              className="w-full py-3 rounded-2xl bg-[#C8A96A] hover:bg-[#b89858] disabled:opacity-50 text-black font-medium text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-transform active:scale-[0.98] shadow-lg shadow-[#C8A96A]/20 cursor-pointer"
             >
               <Sparkles className="w-4 h-4" />
               <span>Submit Verified Review</span>

@@ -22,7 +22,7 @@ export const DisputeModal: React.FC<DisputeModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     store.fileComplaint(order.id, reason, description);
-    alert('Dispute submitted! Escrow payout is now frozen pending admin review.');
+    alert('Report submitted! Our campus mediation team will review your order.');
     onDisputeFiled();
     onClose();
   };
@@ -30,20 +30,20 @@ export const DisputeModal: React.FC<DisputeModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
       <div 
-        className="relative w-full max-w-md rounded-3xl bg-[#0F172A] border border-rose-900/80 shadow-2xl overflow-hidden my-auto"
+        className="relative w-full max-w-md rounded-3xl bg-[#0B1120] border border-white/[0.1] shadow-2xl overflow-hidden my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-purple-950/80 bg-[#131b2e] flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
               <Flag className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white font-serif">
+              <h3 className="text-base font-medium text-white font-serif">
                 Report Issue on Order #{order.orderNumber}
               </h3>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-[#8C9399]">
                 Seller: {order.sellerName}
               </p>
             </div>
@@ -51,17 +51,17 @@ export const DisputeModal: React.FC<DisputeModalProps> = ({
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center border border-slate-800 transition-colors"
+            className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white flex items-center justify-center border border-white/[0.08] transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Freezing Warning */}
+        {/* Notice */}
         <div className="p-3.5 bg-rose-950/40 border-b border-rose-900/40 text-rose-200 text-xs flex items-start gap-2">
           <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
           <p className="text-[11px] leading-relaxed">
-            Filing this report places an immediate freeze on the seller's escrow payout. Our campus mediation team will review your case.
+            Filing this report alerts our campus mediation team to review the delivery before final settlement.
           </p>
         </div>
 
@@ -123,7 +123,7 @@ export const DisputeModal: React.FC<DisputeModalProps> = ({
               type="submit"
               className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition-colors"
             >
-              Submit & Freeze Escrow
+              Submit Report
             </button>
           </div>
         </form>

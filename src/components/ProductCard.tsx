@@ -46,70 +46,74 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   return (
     <div
       onClick={() => onSelect(product)}
-      className="group rounded-2xl bg-[#121a2c]/90 hover:bg-[#162138] border border-purple-950/70 hover:border-purple-800/80 transition-all duration-200 overflow-hidden flex flex-col cursor-pointer active:scale-[0.99] shadow-md hover:shadow-xl"
+      className="group rounded-2xl bg-white/[0.03] hover:bg-white/[0.05] backdrop-blur-[18px] border border-white/[0.08] hover:border-[#C8A96A]/50 transition-all duration-500 overflow-hidden flex flex-col cursor-pointer active:scale-[0.99] shadow-[0_30px_80px_rgba(0,0,0,0.6)] hover:shadow-[0_40px_90px_rgba(0,0,0,0.8)]"
     >
       {/* Product Image & Badges */}
-      <div className="relative aspect-square w-full bg-slate-900 overflow-hidden">
+      <div className="relative aspect-square w-full bg-[#06090e] overflow-hidden">
         <img
           src={product.images[0]}
           alt={product.title}
-          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
           loading="lazy"
+          decoding="async"
         />
 
+        {/* Soft luxury vignette */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#020406]/70 via-transparent to-[#020406]/30 pointer-events-none" />
+
         {/* Condition tag */}
-        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-slate-950/80 backdrop-blur-md border border-slate-700/50 text-[10px] font-semibold text-slate-200">
+        <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full bg-[#020406]/85 backdrop-blur-md border border-white/[0.1] text-[9px] font-medium tracking-wider uppercase text-[#E9E6DF]">
           {getConditionLabel(product.condition)}
         </div>
 
         {/* Campus indicator tag */}
-        <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-purple-950/90 backdrop-blur-md border border-purple-700/50 text-[10px] font-bold text-[#f3c84b] flex items-center gap-1">
-          <MapPin className="w-2.5 h-2.5" />
+        <div className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full bg-[#020406]/85 backdrop-blur-md border border-[#C8A96A]/40 text-[9px] font-medium text-[#C8A96A] flex items-center gap-1 uppercase tracking-wider">
+          <MapPin className="w-2.5 h-2.5 text-[#C8A96A]" />
           <span>{product.campusName.split('(')[1] ? product.campusName.split('(')[1].replace(')', '') : product.campusName.slice(0, 10)}</span>
         </div>
 
-        {/* Quick Add Button */}
+        {/* Quick Add Button - 1px Gold Outline */}
         <button
           onClick={(e) => onAddToCart(e, product)}
-          className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-[#f3c84b] hover:bg-[#eab308] text-slate-950 flex items-center justify-center shadow-lg transition-transform active:scale-90"
+          className="absolute bottom-2.5 right-2.5 w-8 h-8 rounded-xl border border-[#C8A96A] bg-[#020406]/85 hover:bg-[#C8A96A] text-[#C8A96A] hover:text-[#020406] flex items-center justify-center shadow-lg transition-all duration-300 active:scale-90 cursor-pointer"
           title="Add to basket"
           aria-label="Add to basket"
         >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
+          <Plus className="w-4 h-4 stroke-[2]" />
         </button>
       </div>
 
       {/* Card Body */}
-      <div className="p-3.5 sm:p-4 flex flex-col flex-grow justify-between">
+      <div className="p-4 flex flex-col flex-grow justify-between bg-white/[0.01]">
         <div>
           {/* Category & Pickup landmark */}
-          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-            <span className="uppercase tracking-wider font-semibold text-purple-300/90 text-[10px]">
+          <div className="flex items-center justify-between text-[11px] text-[#8C9399] mb-1.5">
+            <span className="uppercase tracking-[0.25em] font-medium text-[#C8A96A] text-[9px]">
               {product.category}
             </span>
-            <span className="truncate max-w-[120px] text-slate-400 text-[10px]">
+            <span className="truncate max-w-[120px] text-[#8C9399] text-[10px] font-light">
               {product.pickupLandmark.split(',')[0]}
             </span>
           </div>
 
           {/* Product Title */}
-          <h3 className="text-sm font-medium text-white line-clamp-2 leading-snug group-hover:text-purple-200 transition-colors">
+          <h3 className="text-sm font-light text-[#E9E6DF] line-clamp-2 leading-snug group-hover:text-white transition-colors duration-300 font-sans">
             {product.title}
           </h3>
         </div>
 
-        <div className="mt-3 pt-2.5 border-t border-purple-950/60">
+        <div className="mt-4 pt-3 border-t border-white/[0.08]">
           {/* Price */}
           <div className="flex items-baseline justify-between">
-            <span className="text-base sm:text-lg font-bold text-[#f3c84b] tabular-nums">
+            <span className="text-base sm:text-lg font-normal text-[#C8A96A] tabular-nums font-serif tracking-wide">
               {formatNaira(product.price)}
             </span>
           </div>
 
           {/* Seller, Verification & Rating */}
-          <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2">
+          <div className="flex items-center justify-between text-[11px] text-[#8C9399] mt-2 font-light">
             <div className="flex items-center gap-1.5 truncate max-w-[140px]">
-              <span className="truncate text-slate-300 font-medium">{product.sellerName}</span>
+              <span className="truncate text-[#E9E6DF]/80 font-light">{product.sellerName}</span>
               {product.sellerVerified && (
                 <span title="Verified Campus Seller">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -118,10 +122,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </div>
 
             {/* Seller Star Rating Badge */}
-            <div className="flex items-center gap-1 text-[11px] text-[#f3c84b] font-semibold shrink-0">
-              <Star className="w-3 h-3 fill-[#f3c84b]" />
+            <div className="flex items-center gap-1 text-[11px] text-[#C8A96A] font-medium shrink-0">
+              <Star className="w-3 h-3 fill-[#C8A96A]" />
               <span>{ratingValue}</span>
-              <span className="text-slate-500 text-[10px]">({reviewsCount})</span>
+              <span className="text-[#8C9399] text-[10px]">({reviewsCount})</span>
             </div>
           </div>
         </div>

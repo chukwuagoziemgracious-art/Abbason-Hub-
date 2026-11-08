@@ -1,0 +1,280 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny all unspecified reads and writes
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Connection Health Check Document
+    match /test/connection {
+      allow get: if true;
+    }
+
+    // --- Primitive Helper Functions ---
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Platform Super Admin for Abbason Hub - verified by trusted email from auth token
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'chukwuagoziemgracious@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // --- Entity Validation Helpers ---
+    function isValidProduct(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.sellerId is string && data.sellerId.size() <= 128 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 180 &&
+             data.price is number && data.price >= 0 &&
+             data.category is string && data.category.size() <= 64 &&
+             data.condition in ['new', 'used_like_new', 'used_good'] &&
+             data.status in ['pending_review', 'approved', 'rejected'] &&
+             !('sellerPhone' in data) &&
+             (!('fulfillmentOptions' in data) || (
+               data.fulfillmentOptions is list &&
+               data.fulfillmentOptions.size() >= 1 &&
+               data.fulfillmentOptions.hasAny(['delivery', 'pickup'])
+             )) &&
+             (!('pickup' in data) || (
+               data.pickup.locationKind in ['safe_checkpoint', 'custom'] &&
+               data.pickup.locationLabel is string &&
+               data.pickup.days is list &&
+               data.pickup.days.size() >= 1 &&
+               data.pickup.timeSlot in ['morning', 'afternoon', 'evening', 'any']
+             )) &&
+             (!('deliverySchedule' in data) || (
+               data.deliverySchedule.type in ['within_3_days', 'within_7_days', 'specific_days'] &&
+               data.deliverySchedule.timeSlot in ['morning', 'afternoon', 'evening', 'any']
+             ));
+    }
+
+    function isValidOrder(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.orderNumber is string && data.orderNumber.size() <= 32 &&
+             data.buyerId is string && data.buyerId.size() <= 128 &&
+             data.sellerId is string && data.sellerId.size() <= 128 &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             data.status in ['delivery_fee_paid', 'in_transit', 'delivered_pending_inspection', 'partially_paid', 'paid_completed', 'paid_awaiting_delivery', 'delivered', 'disputed', 'cancelled', 'scheduled', 'awaiting_payment'];
+    }
+
+    function isValidUser(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
+             data.email is string && data.email.size() <= 120 &&
+             data.role in ['student', 'seller', 'admin'];
+    }
+
+    function isValidSellerProfile(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.storeName is string && data.storeName.size() > 0 && data.storeName.size() <= 120 &&
+             data.campusId is string && data.campusId.size() <= 64 &&
+             data.campusName is string && data.campusName.size() <= 120 &&
+             !('phone' in data) &&
+             !('email' in data) &&
+             !('hostel' in data) &&
+             !('bankDetails' in data) &&
+             !('rating' in data) &&
+             !('reviewsCount' in data) &&
+             !('salesCount' in data);
+    }
+
+    function isValidReview(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.sellerId is string && data.sellerId.size() <= 128 &&
+             data.buyerId is string && data.buyerId.size() <= 128 &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() <= 1000;
+    }
+
+    function isValidComplaint(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.orderId is string && data.orderId.size() <= 128 &&
+             data.buyerId is string && data.buyerId.size() <= 128 &&
+             data.sellerId is string && data.sellerId.size() <= 128 &&
+             data.reason is string && data.reason.size() <= 120 &&
+             data.status in ['open', 'resolved_refund', 'resolved_payout'];
+    }
+
+    function isValidVerification(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.matricNumber is string && data.matricNumber.size() <= 64 &&
+             data.status in ['pending', 'approved', 'rejected'];
+    }
+
+    // --- Collection Security Rules ---
+
+    // 1. Marketplace Products
+    match /products/{productId} {
+      allow get, list: if true;
+      allow create: if isValidId(productId) && isSignedIn() &&
+        isValidProduct(incoming()) &&
+        (
+          isAdmin() ||
+          (
+            incoming().sellerId == request.auth.uid &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isVerifiedSeller == true
+          )
+        );
+      allow update: if isValidId(productId) && (
+        isAdmin() ||
+        (isSignedIn() && existing().sellerId == request.auth.uid && incoming().sellerId == existing().sellerId && isValidProduct(incoming()))
+      );
+      allow delete: if isValidId(productId) && (isAdmin() || (isSignedIn() && existing().sellerId == request.auth.uid));
+    }
+
+    // 2. Public Seller Profiles (No sensitive PII, phone, or bank details)
+    match /sellerProfiles/{sellerId} {
+      allow get: if true;
+      allow list: if isAdmin() || (!('isRemoved' in resource.data) || resource.data.isRemoved == false);
+      allow create: if isValidId(sellerId) && (
+        isAdmin() ||
+        (
+          isSignedIn() &&
+          request.auth.uid == sellerId &&
+          isValidSellerProfile(incoming()) &&
+          (!('isVerifiedSeller' in incoming()) || incoming().isVerifiedSeller == false) &&
+          (!('isSuspended' in incoming()) || incoming().isSuspended == false) &&
+          (!('isRemoved' in incoming()) || incoming().isRemoved == false)
+        )
+      );
+      allow update: if isValidId(sellerId) && (
+        isAdmin() ||
+        (
+          isSignedIn() &&
+          request.auth.uid == sellerId &&
+          isValidSellerProfile(incoming()) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isVerifiedSeller', 'isSuspended', 'isRemoved'])
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // 3. User Profiles (Private PII: owner and admin only)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isAdmin() || (isSignedIn() && request.auth.uid == userId));
+      allow list, delete: if isAdmin();
+      allow create: if isValidId(userId) && (
+        isAdmin() ||
+        (
+          isSignedIn() &&
+          request.auth.uid == userId &&
+          isValidUser(incoming()) &&
+          incoming().role in ['student', 'seller'] &&
+          (!('isVerifiedSeller' in incoming()) || incoming().isVerifiedSeller == false) &&
+          (!('sellerVerificationStatus' in incoming()) || incoming().sellerVerificationStatus == 'not_applied')
+        )
+      );
+      allow update: if isValidId(userId) && (
+        isAdmin() ||
+        (
+          isSignedIn() &&
+          request.auth.uid == userId &&
+          isValidUser(incoming()) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'isVerifiedSeller', 'role', 'rating', 'reviewsCount', 'salesCount',
+            'bannedUntilMs', 'suspendedUntilMs', 'subaccountCode'
+          ]) &&
+          (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sellerVerificationStatus']) ||
+            incoming().sellerVerificationStatus == 'pending'
+          )
+        )
+      );
+    }
+
+    // 4. Orders (Restricted to involved parties and admin; server authoritative writes)
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId) && (
+        isAdmin() ||
+        (isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid))
+      );
+      allow list: if isAdmin() ||
+        (isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid));
+      allow create, update: if false;
+      allow delete: if isAdmin();
+
+      // Buyer contact details - revealed to seller only when contactShared is true and not cancelled
+      match /contact/buyer {
+        allow get: if isAdmin() ||
+          (isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/orders/$(orderId)).data.buyerId) ||
+          (isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/orders/$(orderId)).data.sellerId &&
+           get(/databases/$(database)/documents/orders/$(orderId)).data.contactShared == true &&
+           get(/databases/$(database)/documents/orders/$(orderId)).data.status != 'cancelled');
+        allow list, write: if false;
+      }
+
+      // Seller contact details - revealed to buyer only when contactShared is true and not cancelled
+      match /contact/seller {
+        allow get: if isAdmin() ||
+          (isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/orders/$(orderId)).data.sellerId) ||
+          (isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/orders/$(orderId)).data.buyerId &&
+           get(/databases/$(database)/documents/orders/$(orderId)).data.contactShared == true &&
+           get(/databases/$(database)/documents/orders/$(orderId)).data.status != 'cancelled');
+        allow list, write: if false;
+      }
+    }
+
+    // 5. Seller Reviews
+    match /reviews/{reviewId} {
+      allow get, list: if true;
+      allow create: if isValidId(reviewId) && isSignedIn() &&
+        isValidReview(incoming()) &&
+        incoming().buyerId == request.auth.uid;
+      allow update, delete: if isAdmin() || (isSignedIn() && existing().buyerId == request.auth.uid);
+    }
+
+    // 6. Complaints & Disputes (Server authoritative writes)
+    match /complaints/{complaintId} {
+      allow get, list: if isAdmin() ||
+        (isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid));
+      allow create, update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // 7. Seller Verification Requests
+    match /verifications/{verificationId} {
+      allow get, list: if isAdmin() ||
+        (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(verificationId) && isSignedIn() &&
+        isValidVerification(incoming()) &&
+        incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // 8. Payout Records
+    match /payouts/{payoutId} {
+      allow get, list: if isAdmin() ||
+        (isSignedIn() && resource.data.sellerId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 9. Payments (Server authoritative only, no direct client access)
+    match /payments/{reference} {
+      allow read, write: if false;
+    }
+
+    // 10. Private Seller Ledger & Subaccount Credentials (Owner and admin only)
+    match /sellerPrivate/{userId} {
+      allow get: if isValidId(userId) && (isAdmin() || (isSignedIn() && request.auth.uid == userId));
+      allow list, write: if false;
+    }
+  }
+}

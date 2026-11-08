@@ -1,0 +1,172 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "A marketplace item listed for sale on campus with student escrow protection",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "sellerId": { "type": "string", "maxLength": 128 },
+        "sellerName": { "type": "string", "maxLength": 120 },
+        "sellerPhone": { "type": "string", "maxLength": 30 },
+        "sellerVerified": { "type": "boolean" },
+        "campusId": { "type": "string", "maxLength": 64 },
+        "campusName": { "type": "string", "maxLength": 120 },
+        "title": { "type": "string", "maxLength": 180 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "price": { "type": "number" },
+        "category": { "type": "string", "maxLength": 64 },
+        "condition": { "type": "string", "enum": ["new", "used_like_new", "used_good"] },
+        "images": { "type": "array" },
+        "stock": { "type": "number" },
+        "deliveryOption": { "type": "string", "enum": ["seller_delivers", "buyer_pickup", "both"] },
+        "deliveryFee": { "type": "number" },
+        "pickupLandmark": { "type": "string", "maxLength": 200 },
+        "status": { "type": "string", "enum": ["pending_review", "approved", "rejected"] },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "sellerId", "sellerName", "campusId", "title", "price", "category", "condition", "status", "createdAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An escrow-protected order placed between student buyer and campus seller",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orderNumber": { "type": "string", "maxLength": 32 },
+        "buyerId": { "type": "string", "maxLength": 128 },
+        "buyerName": { "type": "string", "maxLength": 120 },
+        "buyerPhone": { "type": "string", "maxLength": 30 },
+        "buyerHostel": { "type": "string", "maxLength": 120 },
+        "sellerId": { "type": "string", "maxLength": 128 },
+        "sellerName": { "type": "string", "maxLength": 120 },
+        "campusId": { "type": "string", "maxLength": 64 },
+        "campusName": { "type": "string", "maxLength": 120 },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "deliveryFee": { "type": "number" },
+        "gatewayFee": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "platformCommission": { "type": "number" },
+        "sellerPayoutAmount": { "type": "number" },
+        "fulfillmentType": { "type": "string", "enum": ["seller_delivers", "buyer_pickup"] },
+        "deliveryInstructions": { "type": "string", "maxLength": 500 },
+        "paymentMethod": { "type": "string", "enum": ["card", "bank_transfer", "ussd"] },
+        "paymentStatus": { "type": "string", "enum": ["escrow_held", "payout_released", "refunded"] },
+        "otpHash": { "type": "string", "maxLength": 128 },
+        "otpSalt": { "type": "string", "maxLength": 64 },
+        "otpExpiresAt": { "type": "number" },
+        "otpFailedAttempts": { "type": "number" },
+        "status": { "type": "string", "enum": ["paid_awaiting_delivery", "delivered", "disputed", "cancelled"] },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "orderNumber", "buyerId", "sellerId", "subtotal", "totalAmount", "status", "paymentStatus", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Student or seller user account details with campus affiliation and verification state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "role": { "type": "string", "enum": ["student", "seller", "admin"] },
+        "campusId": { "type": "string", "maxLength": 64 },
+        "campusName": { "type": "string", "maxLength": 120 },
+        "hostel": { "type": "string", "maxLength": 120 },
+        "isVerifiedSeller": { "type": "boolean" },
+        "sellerVerificationStatus": { "type": "string", "enum": ["not_applied", "pending", "verified", "rejected"] },
+        "storeName": { "type": "string", "maxLength": 120 },
+        "bio": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "name", "email", "role", "campusId"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Student buyer review and rating for an on-campus seller",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "sellerId": { "type": "string", "maxLength": 128 },
+        "sellerName": { "type": "string", "maxLength": 120 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "buyerId": { "type": "string", "maxLength": 128 },
+        "buyerName": { "type": "string", "maxLength": 120 },
+        "campusName": { "type": "string", "maxLength": 120 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "verifiedPurchase": { "type": "boolean" }
+      },
+      "required": ["id", "sellerId", "buyerId", "rating", "comment", "createdAt"]
+    },
+    "Complaint": {
+      "title": "Complaint",
+      "description": "Buyer or seller dispute regarding an escrow order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "orderNumber": { "type": "string", "maxLength": 32 },
+        "buyerId": { "type": "string", "maxLength": 128 },
+        "buyerName": { "type": "string", "maxLength": 120 },
+        "sellerId": { "type": "string", "maxLength": 128 },
+        "sellerName": { "type": "string", "maxLength": 120 },
+        "reason": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1500 },
+        "status": { "type": "string", "enum": ["open", "resolved_refund", "resolved_payout"] },
+        "resolutionNote": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "orderId", "buyerId", "sellerId", "reason", "status", "createdAt"]
+    },
+    "SellerVerification": {
+      "title": "SellerVerification",
+      "description": "Student seller ID verification submission for trust badge",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "userEmail": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "campusId": { "type": "string", "maxLength": 64 },
+        "campusName": { "type": "string", "maxLength": 120 },
+        "matricNumber": { "type": "string", "maxLength": 64 },
+        "facultyDepartment": { "type": "string", "maxLength": 120 },
+        "level": { "type": "string", "maxLength": 20 },
+        "idCardPhotoUrl": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "submittedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "matricNumber", "status", "submittedAt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Campus marketplace items available for nationwide campus browsing"
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Orders with campus escrow status, delivery OTP hash, and fulfillment details"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profiles with campus registration and verification states"
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/Review" },
+      "description": "Verified campus peer reviews and seller ratings"
+    },
+    "/complaints/{complaintId}": {
+      "schema": { "$ref": "#/entities/Complaint" },
+      "description": "Escrow transaction disputes and resolution logs"
+    },
+    "/verifications/{verificationId}": {
+      "schema": { "$ref": "#/entities/SellerVerification" },
+      "description": "Student identity verification submissions for trusted seller badges"
+    }
+  }
+}

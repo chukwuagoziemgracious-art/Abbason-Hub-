@@ -74,20 +74,20 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
       <div
-        className="relative w-full max-w-lg rounded-3xl bg-[#0F172A] border border-purple-900/70 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
+        className="relative w-full max-w-lg rounded-3xl bg-[#0B1120] border border-white/[0.1] shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-purple-950 bg-[#131b2e] flex items-center justify-between shrink-0">
+        <div className="p-4 sm:p-5 border-b border-white/[0.08] bg-white/[0.02] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-purple-950 border border-purple-800 flex items-center justify-center text-[#f3c84b]">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+            <div className="w-9 h-9 rounded-2xl bg-[#C8A96A]/15 border border-[#C8A96A]/30 flex items-center justify-center text-[#C8A96A]">
+              <ShieldCheck className="w-5 h-5 text-[#C8A96A]" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white font-serif">
+              <h3 className="text-base font-medium text-white font-serif">
                 Campus Seller Verification
               </h3>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-[#8C9399]">
                 Only verified university vendors can sell on Abbason Hub
               </p>
             </div>
@@ -95,7 +95,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center border border-slate-800 transition-colors"
+            className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white flex items-center justify-center border border-white/[0.08] transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -104,12 +104,12 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
         {/* Body Content */}
         <div className="overflow-y-auto p-4 sm:p-6 space-y-4">
           {/* Trust Banner */}
-          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/60 to-slate-900 border border-purple-800/50 text-xs">
+          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] text-xs">
             <div className="flex items-start gap-2.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <ShieldCheck className="w-4 h-4 text-[#C8A96A] shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <p className="font-semibold text-white">Why is verification required?</p>
-                <p className="text-slate-300 text-[11px] leading-relaxed">
+                <p className="font-medium text-white">Why is verification required?</p>
+                <p className="text-[#8C9399] text-[11px] leading-relaxed font-light">
                   To protect fellow campus students from counterfeit items and fraud, all sellers must verify their student status and settlement account before posting listings.
                 </p>
               </div>
@@ -125,7 +125,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                 Application Under Admin Review
               </h4>
               <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
-                Your verification documents have been received by the Abbason Hub Moderation Team. Once approved by the administrator, you will be able to list items and receive escrow payouts immediately.
+                Your verification documents have been received by the Abbason Hub Moderation Team. Once approved by the administrator, you will be able to list items and receive direct Paystack payouts.
               </p>
               <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-left text-xs max-w-sm mx-auto space-y-1 text-slate-400">
                 <div><span className="text-slate-200 font-medium">Applicant:</span> {currentUser.name}</div>
@@ -143,9 +143,9 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
               {/* Step 1: Student Credentials */}
-              <div className="space-y-3 p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800">
-                <div className="font-bold text-white text-xs flex items-center gap-1.5 uppercase tracking-wider text-purple-300">
-                  <FileText className="w-3.5 h-3.5 text-[#f3c84b]" />
+              <div className="space-y-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08]">
+                <div className="font-medium text-white text-xs flex items-center gap-1.5 uppercase tracking-wider text-[#C8A96A]">
+                  <FileText className="w-3.5 h-3.5 text-[#C8A96A]" />
                   <span>1. University Student Credentials</span>
                 </div>
 
@@ -160,7 +160,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                       onChange={(e) => setMatricNumber(e.target.value)}
                       required
                       placeholder="e.g. 2022/ENG/10291"
-                      className="w-full bg-[#0B1120] border border-slate-800 focus:border-[#f3c84b] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none"
+                      className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none"
                     />
                   </div>
 
@@ -171,13 +171,13 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                     <select
                       value={level}
                       onChange={(e) => setLevel(e.target.value)}
-                      className="w-full bg-[#0B1120] border border-slate-800 focus:border-[#f3c84b] rounded-xl px-3 py-2 text-white focus:outline-none"
+                      className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl px-3 py-2 text-white focus:outline-none"
                     >
                       <option value="100 Level">100 Level</option>
                       <option value="200 Level">200 Level</option>
                       <option value="300 Level">300 Level</option>
                       <option value="400 Level">400 Level</option>
-                      <option value="500 Level">500 Level (Final Year)</option>
+                      <option value="500 Level (Final Year)">500 Level (Final Year)</option>
                       <option value="Postgraduate">Postgraduate (PG)</option>
                     </select>
                   </div>
@@ -194,7 +194,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                       onChange={(e) => setFacultyDepartment(e.target.value)}
                       required
                       placeholder="e.g. Engineering / Electrical"
-                      className="w-full bg-[#0B1120] border border-slate-800 focus:border-[#f3c84b] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none"
+                      className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none"
                     />
                   </div>
 
@@ -208,7 +208,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                       onChange={(e) => setHostelShopLocation(e.target.value)}
                       required
                       placeholder="e.g. Diamond Valley Hostel Room 12"
-                      className="w-full bg-[#0B1120] border border-slate-800 focus:border-[#f3c84b] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none"
+                      className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none"
                     />
                   </div>
                 </div>
@@ -220,7 +220,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                   <select
                     value={idDocumentType}
                     onChange={(e) => setIdDocumentType(e.target.value)}
-                    className="w-full bg-[#0B1120] border border-slate-800 focus:border-[#f3c84b] rounded-xl px-3 py-2 text-white focus:outline-none"
+                    className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl px-3 py-2 text-white focus:outline-none"
                   >
                     <option value="University Student ID Card">University Student ID Card</option>
                     <option value="School Portal Course Registration Slip">School Portal Course Registration Slip</option>
@@ -231,10 +231,10 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
               </div>
 
               {/* Step 2: Bank Settlement Details */}
-              <div className="space-y-3 p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800">
-                <div className="font-bold text-white text-xs flex items-center gap-1.5 uppercase tracking-wider text-purple-300">
-                  <CreditCard className="w-3.5 h-3.5 text-[#f3c84b]" />
-                  <span>2. Settlement Bank Account (For Escrow Payouts)</span>
+              <div className="space-y-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08]">
+                <div className="font-medium text-white text-xs flex items-center gap-1.5 uppercase tracking-wider text-[#C8A96A]">
+                  <CreditCard className="w-3.5 h-3.5 text-[#C8A96A]" />
+                  <span>2. Settlement Bank Account (For Direct Paystack Payouts)</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -245,7 +245,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                     <select
                       value={bankName}
                       onChange={(e) => setBankName(e.target.value)}
-                      className="w-full bg-[#0B1120] border border-slate-800 focus:border-[#f3c84b] rounded-xl px-3 py-2 text-white focus:outline-none"
+                      className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl px-3 py-2 text-white focus:outline-none"
                     >
                       <option value="Access Bank Nigeria">Access Bank Nigeria</option>
                       <option value="Zenith Bank PLC">Zenith Bank PLC</option>
@@ -269,7 +269,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                       onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
                       required
                       placeholder="0123456789"
-                      className="w-full bg-[#0B1120] border border-slate-800 focus:border-[#f3c84b] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none font-mono"
+                      className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none font-mono"
                     />
                   </div>
                 </div>
@@ -284,22 +284,22 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                     onChange={(e) => setAccountName(e.target.value)}
                     required
                     placeholder="Must match student registration name"
-                    className="w-full bg-[#0B1120] border border-slate-800 focus:border-[#f3c84b] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none"
+                    className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none"
                   />
                 </div>
               </div>
 
               {/* Code of Conduct Checkbox */}
-              <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-900/60 flex items-start gap-2.5">
+              <div className="p-3 rounded-xl bg-white/[0.03] border border-[#C8A96A]/30 flex items-start gap-2.5">
                 <input
                   type="checkbox"
                   id="agree-seller"
                   checked={agreeTerms}
                   onChange={(e) => setAgreeTerms(e.target.checked)}
-                  className="mt-0.5 rounded border-slate-700 bg-slate-900 text-[#f3c84b] focus:ring-[#f3c84b]"
+                  className="mt-0.5 rounded border-slate-700 bg-slate-900 text-[#C8A96A] focus:ring-[#C8A96A]"
                 />
-                <label htmlFor="agree-seller" className="text-[11px] text-slate-300 leading-relaxed cursor-pointer">
-                  I agree to Abbason Hub terms: I understand that funds are held in escrow and released only after the buyer physically inspects the item and provides their secret 6-digit delivery OTP. Platform commission is 3% (capped at ₦2,000).
+                <label htmlFor="agree-seller" className="text-[11px] text-[#8C9399] leading-relaxed cursor-pointer font-light">
+                  I agree to Abbason Hub terms: I understand that the buyer pays transport upfront and settles the item price via Paystack upon physical inspection. Platform commission is 3% (capped at ₦2,000).
                 </label>
               </div>
 

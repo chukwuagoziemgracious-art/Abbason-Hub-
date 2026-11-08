@@ -182,56 +182,64 @@ export const CATEGORIES: Category[] = [
     name: 'Electronics',
     slug: 'electronics',
     subtitle: 'Phones, laptops & gadgets',
-    icon: 'Laptop'
+    icon: 'Laptop',
+    imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=65'
   },
   {
     id: 'fashion',
     name: 'Fashion & accessories',
     slug: 'fashion',
     subtitle: 'Wear it your way',
-    icon: 'Shirt'
+    icon: 'Shirt',
+    imageUrl: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=600&q=65'
   },
   {
     id: 'food',
     name: 'Food & groceries',
     slug: 'food',
     subtitle: 'Good things, close by',
-    icon: 'ShoppingBasket'
+    icon: 'ShoppingBasket',
+    imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=65'
   },
   {
     id: 'beauty',
     name: 'Beauty',
     slug: 'beauty',
     subtitle: 'Everyday care & beauty',
-    icon: 'Sparkles'
+    icon: 'Sparkles',
+    imageUrl: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=65'
   },
   {
     id: 'books',
     name: 'Books & stationery',
     slug: 'books',
     subtitle: 'Study essentials',
-    icon: 'BookOpen'
+    icon: 'BookOpen',
+    imageUrl: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&w=600&q=65'
   },
   {
     id: 'home',
     name: 'Home & dorm',
     slug: 'home',
     subtitle: 'Make your space yours',
-    icon: 'Bed'
+    icon: 'Bed',
+    imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=600&q=65'
   },
   {
     id: 'services',
     name: 'Services',
     slug: 'services',
     subtitle: 'People who can help',
-    icon: 'Wrench'
+    icon: 'Wrench',
+    imageUrl: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&w=600&q=65'
   },
   {
     id: 'other',
     name: 'Other',
     slug: 'other',
     subtitle: 'A little bit of everything',
-    icon: 'Briefcase'
+    icon: 'Briefcase',
+    imageUrl: 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?auto=format&fit=crop&w=600&q=65'
   }
 ];
 
@@ -338,7 +346,7 @@ export const INITIAL_SELLER_REVIEWS: SellerReview[] = [
     buyerName: 'Chiamaka Okoli',
     campusName: 'UNIZIK (Awka)',
     rating: 5,
-    comment: 'Collected at Digital Library! Emeka allowed me to benchmark the laptop and inspect the battery health before I gave him the 6-digit delivery OTP code. Super honest student seller!',
+    comment: 'Collected at Digital Library! Emeka allowed me to benchmark the laptop and inspect the battery health before completing handover. Super honest student seller!',
     createdAt: '2026-10-14T08:00:00Z',
     verifiedPurchase: true
   },
@@ -362,7 +370,7 @@ export const INITIAL_SELLER_REVIEWS: SellerReview[] = [
     buyerName: 'Kemi Adebayo',
     campusName: 'UNIZIK (Awka)',
     rating: 4.8,
-    comment: 'Super fast communication on WhatsApp. Came with original charger and tested immediately at Second Gate. Recommended!',
+    comment: 'Super fast communication. Came with original charger and tested immediately at Second Gate. Recommended!',
     createdAt: '2026-10-10T11:15:00Z',
     verifiedPurchase: true
   },
@@ -386,7 +394,7 @@ export const INITIAL_SELLER_REVIEWS: SellerReview[] = [
     buyerName: 'Segun Balogun',
     campusName: 'UNILAG (Akoka)',
     rating: 5,
-    comment: 'Met at New Hall arena. iPhone is spotless and factory unlocked. Handshake escrow gave me complete peace of mind.',
+    comment: 'Met at New Hall arena. iPhone is spotless and factory unlocked. Inspecting on delivery gave me complete peace of mind.',
     createdAt: '2026-10-11T18:20:00Z',
     verifiedPurchase: true
   }
@@ -397,7 +405,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     id: 'prod_hp_laptop',
     sellerId: 'user_emeka',
     sellerName: 'Emeka Campus Gadgets',
-    sellerPhone: '+234 803 412 9081',
     sellerVerified: true,
     sellerRating: 4.9,
     sellerReviewCount: 38,
@@ -409,22 +416,32 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: 'electronics',
     condition: 'used_like_new',
     images: [
-      'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=800&q=80'
+      'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?auto=format&fit=crop&w=600&q=65',
+      'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=600&q=65'
     ],
     stock: 2,
     deliveryOption: 'both',
+    fulfillmentOptions: ['delivery', 'pickup'],
     deliveryFee: 1000,
     pickupLandmark: 'Ifite First Gate, Opposite Peace Mass Logistics',
+    pickup: {
+      locationKind: 'safe_checkpoint',
+      locationLabel: 'Digital Library (Festus Aghagbo Hall)',
+      days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      timeSlot: '9am - 5pm'
+    },
     status: 'approved',
     brand: 'HP',
-    createdAt: '2026-10-10T10:00:00Z'
+    createdAt: '2026-10-10T10:00:00Z',
+    deliverySchedule: {
+      type: 'within_7_days',
+      timeSlot: 'any'
+    }
   },
   {
     id: 'prod_macbook_air',
     sellerId: 'user_tunde',
     sellerName: 'Akoka Tech Store',
-    sellerPhone: '+234 802 771 9901',
     sellerVerified: true,
     sellerRating: 5.0,
     sellerReviewCount: 19,
@@ -436,22 +453,32 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: 'electronics',
     condition: 'used_like_new',
     images: [
-      'https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=800&q=80'
+      'https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?auto=format&fit=crop&w=600&q=65',
+      'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=600&q=65'
     ],
     stock: 1,
     deliveryOption: 'both',
+    fulfillmentOptions: ['delivery', 'pickup'],
     deliveryFee: 1500,
     pickupLandmark: 'UNILAG New Hall Shopping Arena, Akoka',
+    pickup: {
+      locationKind: 'safe_checkpoint',
+      locationLabel: 'UNILAG New Hall Shopping Arena',
+      days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      timeSlot: '10am - 6pm'
+    },
     status: 'approved',
     brand: 'Apple',
-    createdAt: '2026-10-11T12:00:00Z'
+    createdAt: '2026-10-11T12:00:00Z',
+    deliverySchedule: {
+      type: 'within_7_days',
+      timeSlot: 'any'
+    }
   },
   {
     id: 'prod_rechargeable_fan',
     sellerId: 'user_emeka',
     sellerName: 'Emeka Campus Gadgets',
-    sellerPhone: '+234 803 412 9081',
     sellerVerified: true,
     sellerRating: 4.9,
     sellerReviewCount: 38,
@@ -463,21 +490,31 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: 'home',
     condition: 'new',
     images: [
-      'https://images.unsplash.com/photo-1618941716939-553df3c6c278?auto=format&fit=crop&w=800&q=80'
+      'https://images.unsplash.com/photo-1618941716939-553df3c6c278?auto=format&fit=crop&w=600&q=65'
     ],
     stock: 5,
     deliveryOption: 'both',
+    fulfillmentOptions: ['delivery', 'pickup'],
     deliveryFee: 1200,
     pickupLandmark: 'Perm Site Student Lodges, Perm Site Gate',
+    pickup: {
+      locationKind: 'safe_checkpoint',
+      locationLabel: 'UNIZIK Main Gate (Bank Area)',
+      days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      timeSlot: '9am - 5pm'
+    },
     status: 'approved',
     brand: 'Lontor',
-    createdAt: '2026-10-12T09:00:00Z'
+    createdAt: '2026-10-12T09:00:00Z',
+    deliverySchedule: {
+      type: 'within_7_days',
+      timeSlot: 'any'
+    }
   },
   {
     id: 'prod_camp_gas_cylinder',
     sellerId: 'user_amara',
     sellerName: 'Amara Treats & Thrift',
-    sellerPhone: '+234 706 881 2304',
     sellerVerified: true,
     sellerRating: 4.8,
     sellerReviewCount: 24,
@@ -489,21 +526,31 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: 'home',
     condition: 'used_like_new',
     images: [
-      'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80'
+      'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=600&q=65'
     ],
     stock: 3,
     deliveryOption: 'both',
+    fulfillmentOptions: ['delivery', 'pickup'],
     deliveryFee: 800,
     pickupLandmark: 'Amansea Junction, Beside Total Energy',
+    pickup: {
+      locationKind: 'safe_checkpoint',
+      locationLabel: 'Faculty of Law Quadrangle',
+      days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      timeSlot: '11am - 4pm'
+    },
     status: 'approved',
     brand: 'Golden Lion',
-    createdAt: '2026-10-12T14:00:00Z'
+    createdAt: '2026-10-12T14:00:00Z',
+    deliverySchedule: {
+      type: 'within_7_days',
+      timeSlot: 'any'
+    }
   },
   {
     id: 'prod_engineering_drawing_board',
     sellerId: 'user_emeka',
     sellerName: 'Emeka Campus Gadgets',
-    sellerPhone: '+234 803 412 9081',
     sellerVerified: true,
     sellerRating: 4.9,
     sellerReviewCount: 38,
@@ -515,21 +562,31 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: 'books',
     condition: 'used_good',
     images: [
-      'https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?auto=format&fit=crop&w=800&q=80'
+      'https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?auto=format&fit=crop&w=600&q=65'
     ],
-    stock: 1,
-    deliveryOption: 'buyer_pickup',
-    deliveryFee: 0,
+    stock: 2,
+    deliveryOption: 'both',
+    fulfillmentOptions: ['delivery', 'pickup'],
+    deliveryFee: 1000,
     pickupLandmark: 'UNN Faculty of Engineering Pavilion, Nsukka',
+    pickup: {
+      locationKind: 'safe_checkpoint',
+      locationLabel: 'UNN Faculty of Engineering Pavilion',
+      days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      timeSlot: '9am - 5pm'
+    },
     status: 'approved',
     brand: 'Standard Technical',
-    createdAt: '2026-10-13T08:30:00Z'
+    createdAt: '2026-10-13T08:30:00Z',
+    deliverySchedule: {
+      type: 'within_7_days',
+      timeSlot: 'any'
+    }
   },
   {
     id: 'prod_vintage_denim_jacket',
     sellerId: 'user_amara',
     sellerName: 'Amara Treats & Thrift',
-    sellerPhone: '+234 706 881 2304',
     sellerVerified: true,
     sellerRating: 4.8,
     sellerReviewCount: 24,
@@ -541,21 +598,31 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: 'fashion',
     condition: 'used_like_new',
     images: [
-      'https://images.unsplash.com/photo-1576995853123-5a10305d93c0?auto=format&fit=crop&w=800&q=80'
+      'https://images.unsplash.com/photo-1576995853123-5a10305d93c0?auto=format&fit=crop&w=600&q=65'
     ],
     stock: 1,
     deliveryOption: 'both',
+    fulfillmentOptions: ['delivery', 'pickup'],
     deliveryFee: 1000,
     pickupLandmark: 'OAU SUB Building Car Park, Ile-Ife',
+    pickup: {
+      locationKind: 'safe_checkpoint',
+      locationLabel: 'SUB Building & Car Park',
+      days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      timeSlot: '10am - 5pm'
+    },
     status: 'approved',
     brand: 'Thrift Curated',
-    createdAt: '2026-10-13T11:00:00Z'
+    createdAt: '2026-10-13T11:00:00Z',
+    deliverySchedule: {
+      type: 'within_7_days',
+      timeSlot: 'any'
+    }
   },
   {
     id: 'prod_hostel_dorm_fridge',
     sellerId: 'user_tunde',
     sellerName: 'Akoka Tech Store',
-    sellerPhone: '+234 802 771 9901',
     sellerVerified: true,
     sellerRating: 5.0,
     sellerReviewCount: 19,
@@ -567,21 +634,31 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: 'home',
     condition: 'used_like_new',
     images: [
-      'https://images.unsplash.com/photo-1584992236310-6edddc08acff?auto=format&fit=crop&w=800&q=80'
+      'https://images.unsplash.com/photo-1584992236310-6edddc08acff?auto=format&fit=crop&w=600&q=65'
     ],
     stock: 1,
     deliveryOption: 'both',
+    fulfillmentOptions: ['delivery', 'pickup'],
     deliveryFee: 2000,
     pickupLandmark: 'UNILAG Jaja Hall Gate, Akoka',
+    pickup: {
+      locationKind: 'safe_checkpoint',
+      locationLabel: 'Faculty of Arts Car Park',
+      days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      timeSlot: '12pm - 6pm'
+    },
     status: 'approved',
     brand: 'Hisense',
-    createdAt: '2026-10-13T13:30:00Z'
+    createdAt: '2026-10-13T13:30:00Z',
+    deliverySchedule: {
+      type: 'within_7_days',
+      timeSlot: 'any'
+    }
   },
   {
     id: 'prod_project_binding_printing',
     sellerId: 'user_emeka',
     sellerName: 'Emeka Campus Gadgets',
-    sellerPhone: '+234 803 412 9081',
     sellerVerified: true,
     sellerRating: 4.9,
     sellerReviewCount: 38,
@@ -593,57 +670,27 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: 'services',
     condition: 'new',
     images: [
-      'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=800&q=80'
+      'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=65'
     ],
     stock: 50,
-    deliveryOption: 'seller_delivers',
-    deliveryFee: 500,
+    deliveryOption: 'both',
+    fulfillmentOptions: ['delivery', 'pickup'],
+    deliveryFee: 800,
     pickupLandmark: 'FUTO ICT Centre, Owerri',
+    pickup: {
+      locationKind: 'safe_checkpoint',
+      locationLabel: 'Campus Main Gate',
+      days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      timeSlot: '8am - 6pm'
+    },
     status: 'approved',
     brand: 'Express Campus Press',
-    createdAt: '2026-10-14T07:00:00Z'
+    createdAt: '2026-10-14T07:00:00Z',
+    deliverySchedule: {
+      type: 'within_7_days',
+      timeSlot: 'any'
+    }
   }
 ];
 
-export const INITIAL_ORDERS: Order[] = [
-  {
-    id: 'order_1001',
-    orderNumber: 'AB-82914',
-    buyerId: 'user_chiamaka',
-    buyerName: 'Chiamaka Okoli',
-    buyerPhone: '+234 814 559 8210',
-    buyerHostel: 'Diamond Valley Hostel, Ifite',
-    sellerId: 'user_emeka',
-    sellerName: 'Emeka Campus Gadgets',
-    campusId: 'unizik',
-    campusName: 'Nnamdi Azikiwe University (UNIZIK)',
-    items: [
-      {
-        productId: 'prod_rechargeable_fan',
-        title: 'Lontor 16-Inch Solar Rechargeable Standing Fan + Remote Control',
-        price: 38000,
-        quantity: 1,
-        image: 'https://images.unsplash.com/photo-1618941716939-553df3c6c278?auto=format&fit=crop&w=800&q=80'
-      }
-    ],
-    subtotal: 38000,
-    deliveryFee: 1200,
-    gatewayFee: 670,
-    totalAmount: 39870,
-    platformCommission: 1140, // 3% of 38,000 (below 2,000 cap)
-    sellerPayoutAmount: 38060, // 38,000 - 1,140 + 1,200
-    fulfillmentType: 'seller_delivers',
-    deliveryInstructions: 'Deliver to Diamond Valley Hostel Gate, Room 14',
-    paymentMethod: 'card',
-    paymentStatus: 'payout_released',
-    otpHash: 'd7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592',
-    otpSalt: 'abbason_salt_seed_1001',
-    otpExpiresAt: Date.now() + 86400000,
-    otpFailedAttempts: 0,
-    status: 'delivered',
-    deliveryOtpForBuyer: '482910',
-    hasBuyerReviewed: true,
-    createdAt: '2026-10-14T06:00:00Z',
-    deliveredAt: '2026-10-14T07:45:00Z'
-  }
-];
+export const INITIAL_ORDERS: Order[] = [];

@@ -33,39 +33,39 @@ export const MyOrdersModal: React.FC<MyOrdersModalProps> = ({
   onOpenDispute,
   onRateSeller,
 }) => {
-  const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
-
   const currentUser = store.getCurrentUser();
   const orders = store.getOrders(currentUser.id, 'student');
 
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
   if (!isOpen) return null;
 
-  const handleCopyCode = (order: Order) => {
-    if (order.deliveryOtpForBuyer) {
-      navigator.clipboard.writeText(order.deliveryOtpForBuyer);
-      setCopiedOrderId(order.id);
-      setTimeout(() => setCopiedOrderId(null), 2000);
+  const handleCancelOrder = async (orderId: string) => {
+    if (!window.confirm('Are you sure you want to cancel this order? The upfront delivery fee is non-refundable upon buyer cancellation.')) return;
+    setCancellingOrderId(orderId);
+    setActionFeedback(null);
+    try {
+      const res = await store.cancelOrder(orderId);
+      if (res.success) {
+        setActionFeedback('Order cancelled successfully.');
+      } else {
+        setActionFeedback(res.error || 'Failed to cancel order.');
+      }
+    } finally {
+      setCancellingOrderId(null);
     }
   };
 
   const handleDownloadReceipt = (order: Order) => {
     const receiptContent = `===========================================
 ABBASON HUB — OFFICIAL CAMPUS RECEIPT
-"Everything you imagined."
+"Inspect First · Pay On Delivery"
 ===========================================
 ORDER NUMBER: ${order.orderNumber}
 TRANSACTION DATE: ${new Date(order.createdAt).toLocaleString('en-NG')}
 CAMPUS: ${order.campusName}
-PAYMENT STATUS: CONFIRMED & SECURED IN PAYLUK ESCROW
-
--------------------------------------------
-YOUR SECRET DELIVERY CONFIRMATION CODE:
->>>  ${order.deliveryOtpForBuyer || '••••••'}  <<<
--------------------------------------------
-SECURITY INSTRUCTION:
-Do NOT share this code with the seller beforehand!
-Only provide this code in person after you physically 
-receive, inspect, and confirm your order is in good condition.
+PAYMENT STATUS: ${order.paymentStatus.toUpperCase()}
 
 BUYER DETAILS:
 Name: ${order.buyerName}
@@ -74,18 +74,15 @@ Delivery Destination: ${order.deliveryInstructions}
 
 SELLER DETAILS:
 Vendor / Store: ${order.sellerName}
-Contact Phone: +234 803 412 9081
 
 PURCHASED ITEMS:
-${order.items.map((i) => `• ${i.title} (x${i.quantity}) — ₦${(i.price * i.quantity).toLocaleString()}`).join('\n')}
+${order.items.map((i) => `• ${i.title} (x${i.quantity}) — ₦${(i.price * i.quantity).toLocaleString()} [Item Code: ${i.itemCode}]`).join('\n')}
 
 FINANCIAL BREAKDOWN:
-Subtotal: ₦${order.subtotal.toLocaleString()}
-Delivery Fee: ₦${order.deliveryFee.toLocaleString()}
-Payment Processing Fee: ₦${order.gatewayFee.toLocaleString()}
-TOTAL PAID: ₦${order.totalAmount.toLocaleString()}
-Payment Method: ${order.paymentMethod.toUpperCase()} (Online Web Payment)
-Platform Escrow: Secured by Payluk Escrow Vault
+Upfront Transport Fee: ₦${(order.upfrontTotalPaid || order.deliveryFee).toLocaleString()}
+Items Total Due Upon Delivery: ₦${order.subtotal.toLocaleString()}
+Items Paid So Far: ₦${(order.itemsTotalPaid || 0).toLocaleString()}
+Order Total: ₦${order.totalAmount.toLocaleString()}
 
 Need help? Contact: support@abbasonhub.com
 ===========================================`;
@@ -104,20 +101,20 @@ Need help? Contact: support@abbasonhub.com
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
       <div 
-        className="relative w-full max-w-2xl rounded-3xl bg-[#0F172A] border border-purple-900/70 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
+        className="relative w-full max-w-2xl rounded-3xl bg-[#0B1120] border border-white/[0.1] shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-purple-950/80 bg-[#131b2e] flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-purple-950 border border-purple-800 flex items-center justify-center text-[#f3c84b]">
+            <div className="w-8 h-8 rounded-xl bg-[#C8A96A]/15 border border-[#C8A96A]/30 flex items-center justify-center text-[#C8A96A]">
               <Package className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white font-serif">
-                My Purchases & Delivery Codes
+              <h3 className="text-base font-medium text-white font-serif">
+                My Purchases & Parcels
               </h3>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-[#8C9399]">
                 Logged in as: {currentUser.name}
               </p>
             </div>
@@ -125,11 +122,21 @@ Need help? Contact: support@abbasonhub.com
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center border border-slate-800 transition-colors"
+            className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white flex items-center justify-center border border-white/[0.08] transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Action Feedback Banner */}
+        {actionFeedback && (
+          <div className="bg-[#C8A96A]/20 border-b border-[#C8A96A]/40 px-4 py-2 text-xs text-amber-200 flex items-center justify-between">
+            <span>{actionFeedback}</span>
+            <button onClick={() => setActionFeedback(null)} className="text-[#C8A96A] text-[10px] cursor-pointer">
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Content */}
         <div className="overflow-y-auto p-4 sm:p-6 space-y-4">
@@ -142,34 +149,66 @@ Need help? Contact: support@abbasonhub.com
           ) : (
             <div className="space-y-4">
               {orders.map((order) => {
-                const isAwaitingDelivery = order.status === 'paid_awaiting_delivery';
-                const isDelivered = order.status === 'delivered';
+                const isPaidCompleted = order.status === 'paid_completed' || order.status === 'delivered';
+                const isPartiallyPaid = order.status === 'partially_paid';
+                const isPendingInspection = order.status === 'delivery_fee_paid' || order.status === 'in_transit' || order.status === 'delivered_pending_inspection';
+                const isCancelled = order.status === 'cancelled';
+                const isOverdue = store.isOrderOverdue(order);
+
+                const cutoff = order.contactRevealAtMs || (order.deliveryDeadlineMs ? order.deliveryDeadlineMs - (48 * 3600 * 1000) : 0);
+                const canCancel = !isPaidCompleted && !isCancelled && cutoff > 0 && Date.now() < cutoff;
+                const isPastCutoff = !isPaidCompleted && !isCancelled && cutoff > 0 && Date.now() >= cutoff;
+
                 return (
                   <div
                     key={order.id}
                     className={`p-4 rounded-2xl border transition-all ${
-                      isAwaitingDelivery
-                        ? 'bg-[#121a2c] border-[#f3c84b]/60 shadow-lg'
-                        : 'bg-slate-900/60 border-slate-800'
+                      isOverdue
+                        ? 'bg-rose-950/20 border-rose-500/50 shadow-lg'
+                        : isPendingInspection || isPartiallyPaid
+                          ? 'bg-[#0f172a] border-[#C8A96A]/60 shadow-lg'
+                          : 'bg-slate-900/60 border-slate-800'
                     }`}
                   >
                     {/* Header line */}
                     <div className="flex items-center justify-between text-xs mb-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="font-bold font-mono text-white text-sm">
                           #{order.orderNumber}
                         </span>
-                        {isAwaitingDelivery ? (
-                          <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-600/50 text-amber-300 font-bold text-[10px]">
-                            Awaiting In-Person Delivery
+
+                        {isOverdue && (
+                          <span className="px-2 py-0.5 rounded bg-rose-950 border border-rose-500/60 text-rose-300 font-bold text-[10px] flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-rose-400" />
+                            <span>Overdue</span>
                           </span>
-                        ) : isDelivered ? (
+                        )}
+
+                        {isPaidCompleted ? (
                           <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50 text-emerald-400 font-bold text-[10px]">
-                            Delivered & Handshake Verified
+                            Paid & Completed
+                          </span>
+                        ) : isCancelled ? (
+                          <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400 font-medium text-[10px]">
+                            Cancelled ({order.cancelReason === 'buyer_cancelled' ? 'by you' : 'by seller'})
+                          </span>
+                        ) : isPartiallyPaid ? (
+                          <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-600/50 text-amber-300 font-bold text-[10px]">
+                            Partially Paid
+                          </span>
+                        ) : isPendingInspection ? (
+                          <span className="px-2 py-0.5 rounded bg-[#C8A96A]/20 border border-[#C8A96A]/60 text-[#C8A96A] font-bold text-[10px]">
+                            Inspect On Delivery (POD)
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded bg-rose-950 border border-rose-500/50 text-rose-300 font-bold text-[10px]">
                             Disputed
+                          </span>
+                        )}
+
+                        {order.refund && (
+                          <span className="px-2 py-0.5 rounded bg-amber-950/70 border border-amber-500/40 text-amber-300 text-[10px] font-mono">
+                            Refund {order.refund.status}: {formatNaira(order.refund.owedAmount || order.refund.amountOwed || 0)}
                           </span>
                         )}
                       </div>
@@ -179,31 +218,25 @@ Need help? Contact: support@abbasonhub.com
                       </span>
                     </div>
 
-                    {/* Prominent Delivery Code Box if Awaiting Delivery */}
-                    {isAwaitingDelivery && (
-                      <div className="my-3 p-3.5 rounded-2xl bg-gradient-to-r from-purple-950 via-slate-900 to-[#1e1035] border border-purple-700/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                    {/* Inspect-on-Delivery Call to Action */}
+                    {!isPaidCompleted && (
+                      <div className="my-3 p-3.5 rounded-2xl bg-white/[0.03] border border-[#C8A96A]/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
                         <div>
-                          <div className="flex items-center gap-1.5 text-[#f3c84b] font-bold text-xs uppercase tracking-wider">
-                            <KeyRound className="w-3.5 h-3.5" />
-                            <span>Your Handshake Delivery Code</span>
+                          <div className="flex items-center gap-1.5 text-[#C8A96A] font-medium text-xs uppercase tracking-wider">
+                            <Truck className="w-3.5 h-3.5" />
+                            <span>Inspect & Pay At Hostel</span>
                           </div>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            Show this code to <strong>{order.sellerName}</strong> only after inspecting the item.
+                          <p className="text-[11px] text-[#8C9399] mt-0.5 font-light">
+                            Vendor is dispatched. Inspect items, then pay in 1 tap or per item.
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-mono text-2xl font-black text-white tracking-widest bg-slate-950 px-3.5 py-1.5 rounded-xl border border-purple-800 shadow">
-                            {order.deliveryOtpForBuyer || '••••••'}
-                          </span>
-                          <button
-                            onClick={() => handleCopyCode(order)}
-                            className="p-2 rounded-xl bg-[#f3c84b] hover:bg-[#eab308] text-slate-950 font-bold text-xs cursor-pointer"
-                            title="Copy code"
-                          >
-                            {copiedOrderId === order.id ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => onViewOrderReceipt(order)}
+                          className="px-4 py-2 rounded-xl bg-[#C8A96A] hover:bg-[#b89858] text-black font-semibold text-xs cursor-pointer shadow-md shrink-0"
+                        >
+                          Inspect & Pay Now
+                        </button>
                       </div>
                     )}
 
@@ -213,7 +246,7 @@ Need help? Contact: support@abbasonhub.com
                         Seller: <strong className="text-white">{order.sellerName}</strong> ({order.campusName.split('(')[0]})
                       </div>
                       <div className="text-slate-400 flex items-center gap-1">
-                        <Truck className="w-3.5 h-3.5 text-[#f3c84b]" />
+                        <Truck className="w-3.5 h-3.5 text-[#C8A96A]" />
                         <span>Fulfillment: {order.deliveryInstructions}</span>
                       </div>
                       <div className="pt-1 text-slate-300 font-medium">
@@ -222,29 +255,59 @@ Need help? Contact: support@abbasonhub.com
                     </div>
 
                     {/* Footer Row */}
-                    <div className="pt-2 border-t border-purple-950 flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div className="font-bold text-white">
-                        Total: <span className="text-[#f3c84b] tabular-nums">{formatNaira(order.totalAmount)}</span>
+                    <div className="pt-2 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="font-medium text-white flex items-center gap-2">
+                        <span>Total: <span className="text-[#C8A96A] font-serif tabular-nums">{formatNaira(order.totalAmount)}</span></span>
+                        {canCancel && (
+                          <span className="text-[10px] text-slate-400">
+                            (Can cancel until {new Date(cutoff).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})
+                          </span>
+                        )}
+                        {isPastCutoff && !isCancelled && !isPaidCompleted && (
+                          <span className="text-[10px] text-slate-500 italic">
+                            Cancellation closed
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {isAwaitingDelivery && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {canCancel && (
+                          <button
+                            onClick={() => handleCancelOrder(order.id)}
+                            disabled={cancellingOrderId === order.id}
+                            className="px-2.5 py-1.5 rounded-lg bg-white/[0.04] text-slate-400 hover:text-rose-300 hover:bg-rose-950/40 border border-white/[0.08] text-[11px] cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            {cancellingOrderId === order.id ? 'Cancelling...' : 'Cancel Order'}
+                          </button>
+                        )}
+
+                        {isOverdue && !isPaidCompleted && !isCancelled && (
                           <button
                             onClick={() => onOpenDispute(order)}
-                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-rose-300 hover:bg-slate-700 text-[11px] flex items-center gap-1 cursor-pointer"
+                            className="px-2.5 py-1.5 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-200 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                          >
+                            <AlertTriangle className="w-3 h-3 text-rose-400" />
+                            <span>Report Late Delivery</span>
+                          </button>
+                        )}
+
+                        {!isPaidCompleted && !isCancelled && !isOverdue && (
+                          <button
+                            onClick={() => onOpenDispute(order)}
+                            className="px-2.5 py-1.5 rounded-lg bg-white/[0.04] text-rose-300 hover:bg-white/[0.08] border border-white/[0.08] text-[11px] flex items-center gap-1 cursor-pointer"
                           >
                             <Flag className="w-3 h-3" />
                             <span>Report Issue</span>
                           </button>
                         )}
 
-                        {isDelivered && onRateSeller && (
+                        {isPaidCompleted && onRateSeller && (
                           <button
                             onClick={() => onRateSeller(order)}
-                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer ${
                               order.hasBuyerReviewed
-                                ? 'bg-purple-950 border border-purple-800 text-[#f3c84b]'
-                                : 'bg-[#f3c84b] hover:bg-[#eab308] text-slate-950'
+                                ? 'bg-[#C8A96A]/15 border border-[#C8A96A]/40 text-[#C8A96A]'
+                                : 'bg-[#C8A96A] hover:bg-[#b89858] text-black'
                             }`}
                           >
                             <Star className="w-3.5 h-3.5 fill-current" />
@@ -254,16 +317,16 @@ Need help? Contact: support@abbasonhub.com
 
                         <button
                           onClick={() => handleDownloadReceipt(order)}
-                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                          className="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
                           title="Download Receipt Summary for offline"
                         >
-                          <Download className="w-3 h-3 text-[#f3c84b]" />
+                          <Download className="w-3 h-3 text-[#C8A96A]" />
                           <span className="hidden sm:inline">Slip</span>
                         </button>
 
                         <button
                           onClick={() => onViewOrderReceipt(order)}
-                          className="px-3 py-1.5 rounded-lg bg-purple-900/60 hover:bg-purple-800/60 text-[#f3c84b] text-[11px] font-semibold cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg bg-[#C8A96A]/15 hover:bg-[#C8A96A]/25 border border-[#C8A96A]/40 text-[#C8A96A] text-[11px] font-medium cursor-pointer"
                         >
                           Receipt
                         </button>
