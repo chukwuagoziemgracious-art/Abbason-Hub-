@@ -138,9 +138,15 @@ try {
     ...(credentialOption ? { credential: credentialOption } : {})
   }, 'abbason-admin');
 
-  adminDb = getAdminFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
   adminAuth = getAdminAuth(adminApp);
-  console.log('[Server] Firebase Admin initialized. Database ID:', firebaseConfig.firestoreDatabaseId);
+
+  if (credentialOption) {
+    adminDb = getAdminFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
+    console.log('[Server] Firebase Admin Firestore initialized with service account.');
+  } else {
+    adminDb = null;
+    console.log('[Server] Firebase Admin initialized for Auth token verification (No service account key detected; Firestore Admin SDK disabled).');
+  }
 } catch (err: any) {
   console.warn('[Server] Firebase Admin init notice:', err.message);
 }
@@ -172,6 +178,10 @@ interface PaymentRecord {
   status: 'pending' | 'success' | 'failed';
   subaccountCode?: string;
   buyerUid?: string;
+  authorization_url?: string;
+  access_code?: string;
+  needsRefund?: boolean;
+  refundReason?: string;
   createdAt: string;
   paidAt?: string;
 }
@@ -186,7 +196,7 @@ const memoryComplaints = new Map<string, any>();
 let memoryPaidVendorsCount = 0;
 
 const isProduction = process.env.NODE_ENV === 'production';
-const PAYSTACK_SECRET = (process.env.PAYSTACK_SECRET_KEY || 'sk_live_2560cdff157887cb716ca1ed6c4dceccf846be49').trim();
+const PAYSTACK_SECRET = (process.env.PAYSTACK_SECRET_KEY || '').trim();
 const getPaymentsMode = (): 'demo' | 'test' | 'live' | 'unconfigured' => {
   if (!PAYSTACK_SECRET) {
     if (isProduction) return 'unconfigured';
@@ -214,6 +224,7 @@ async function restoreOrderStock(orderId: string, items: any[]): Promise<void> {
         }
 
         for (const item of items) {
+          if (item.status === 'paid') continue; // B1: Restore stock only for items whose status is not paid
           const qty = item.quantity || 1;
           const pId = item.productId || item.id;
           if (!pId) continue;
@@ -381,7 +392,8 @@ async function getUserProfile(userId: string): Promise<any | null> {
       if (snap.exists) return snap.data();
       return null;
     } catch (err: any) {
-      console.error(`[Storage] adminDb getUserProfile error (${userId}):`, err.message);
+      console.warn(`[Storage] adminDb getUserProfile notice (${userId}):`, err.message);
+      if (PAYMENTS_MODE === 'demo') return null;
       throw err;
     }
   }
@@ -399,7 +411,8 @@ async function getSellerPrivate(sellerId: string): Promise<any | null> {
       if (snap.exists) return snap.data();
       return null;
     } catch (err: any) {
-      console.error(`[Storage] adminDb getSellerPrivate error (${sellerId}):`, err.message);
+      console.warn(`[Storage] adminDb getSellerPrivate notice (${sellerId}):`, err.message);
+      if (PAYMENTS_MODE === 'demo') return memorySellerPrivate.get(sellerId) || null;
       throw err;
     }
   }
@@ -410,14 +423,14 @@ async function getSellerPrivate(sellerId: string): Promise<any | null> {
 }
 
 // Idempotent Payment Success Handler with Paystack Verification & Firestore Transaction
-async function handlePaymentSuccess(reference: string): Promise<{ success: boolean; message: string; order?: any }> {
+async function handlePaymentSuccess(reference: string): Promise<{ success: boolean; retry: boolean; message: string; order?: any }> {
   const payment = await getPaymentRecord(reference);
   if (!payment) {
-    return { success: false, message: `Payment reference not found: ${reference}` };
+    return { success: false, retry: false, message: `Payment reference not found: ${reference}` };
   }
 
   if (payment.status === 'success') {
-    return { success: true, message: 'Payment already processed' };
+    return { success: true, retry: false, message: 'Payment already processed' };
   }
 
   // 1. Verify with Paystack REST API in non-demo mode
@@ -426,19 +439,20 @@ async function handlePaymentSuccess(reference: string): Promise<{ success: boole
       const verifyData = await paystackRequest(`/transaction/verify/${reference}`);
       if (!verifyData || verifyData.status !== 'success') {
         console.error(`[Paystack Verify] Reference ${reference} failed status check:`, verifyData?.status);
-        return { success: false, message: 'Paystack verification failed: payment not successful' };
+        return { success: false, retry: false, message: 'Paystack verification failed: payment not successful' };
       }
       if (verifyData.currency !== 'NGN') {
         console.error(`[Paystack Verify] Reference ${reference} currency mismatch:`, verifyData.currency);
-        return { success: false, message: 'Paystack verification failed: currency is not NGN' };
+        return { success: false, retry: false, message: 'Paystack verification failed: currency is not NGN' };
       }
       if (verifyData.amount !== payment.amountKobo) {
         console.error(`[Paystack Verify] Reference ${reference} amount mismatch: expected ${payment.amountKobo}, got ${verifyData.amount}`);
-        return { success: false, message: 'Paystack verification failed: amount mismatch' };
+        return { success: false, retry: false, message: 'Paystack verification failed: amount mismatch' };
       }
     } catch (err: any) {
       console.error(`[Paystack Verify] Error verifying ${reference}:`, err.message);
-      return { success: false, message: `Paystack verification error: ${err.message}` };
+      const isTemporary = !err.response || err.response.status >= 500 || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT';
+      return { success: false, retry: isTemporary, message: `Paystack verification error: ${err.message}` };
     }
   }
 
@@ -447,19 +461,104 @@ async function handlePaymentSuccess(reference: string): Promise<{ success: boole
     const paymentRef = adminDb.collection('payments').doc(reference);
     try {
       return await adminDb.runTransaction(async (transaction: any) => {
+        // --- READS FIRST ---
         const pSnap = await transaction.get(paymentRef);
         if (!pSnap.exists) {
-          return { success: false, message: 'Payment document missing in transaction' };
+          return { success: false, retry: false, message: 'Payment document missing in transaction' };
         }
         const currentP = pSnap.data();
         if (currentP.status === 'success') {
-          return { success: true, message: 'Payment already processed' };
+          return { success: true, retry: false, message: 'Payment already processed' };
         }
         if (currentP.status === 'processing') {
-          return { success: false, message: 'Payment is currently being processed' };
+          return { success: false, retry: true, message: 'Payment is currently being processed' };
         }
 
-        // Mark processing
+        let orderSnap: any = null;
+        let orderRef: any = null;
+        if ((payment.type === 'delivery_fee' || payment.type === 'goods') && payment.orderId) {
+          orderRef = adminDb.collection('orders').doc(payment.orderId);
+          orderSnap = await transaction.get(orderRef);
+        }
+
+        // --- A6 Late / Duplicate / Unusable Payment Checks ---
+        if (payment.type === 'delivery_fee') {
+          const isAwaiting = orderSnap && orderSnap.exists && orderSnap.data().status === 'awaiting_payment';
+          if (!isAwaiting) {
+            const currentStatus = orderSnap?.exists ? orderSnap.data().status : 'missing';
+            transaction.update(paymentRef, {
+              status: 'success',
+              paidAt: new Date().toISOString(),
+              needsRefund: true,
+              refundReason: `Order is no longer awaiting payment (status: ${currentStatus})`
+            });
+
+            const complaintId = `comp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+            const cRef = adminDb.collection('complaints').doc(complaintId);
+            transaction.set(cRef, {
+              id: complaintId,
+              type: 'payment_needs_refund',
+              reason: 'Customer paid delivery fee but order was not awaiting payment',
+              description: `Customer paid delivery fee of ₦${payment.amountNaira} for order ${orderSnap?.data()?.orderNumber || payment.orderId} but order status is ${currentStatus}. Refund this payment from the Paystack dashboard.`,
+              reference,
+              orderId: payment.orderId,
+              buyerId: payment.buyerUid || orderSnap?.data()?.buyerId || '',
+              status: 'open',
+              createdAt: new Date().toISOString()
+            });
+
+            return {
+              success: true,
+              retry: false,
+              message: 'Payment recorded, flagged for refund as order was not awaiting payment',
+              order: orderSnap?.data()
+            };
+          }
+        }
+
+        if (payment.type === 'goods') {
+          const order = orderSnap?.exists ? orderSnap.data() : null;
+          const targetItemIds = new Set(payment.itemIds || []);
+          const targetItems = order ? order.items.filter((it: any) => targetItemIds.has(it.id) || targetItemIds.has(it.itemCode) || (!payment.itemIds || payment.itemIds.length === 0)) : [];
+          const isEligible = order &&
+            order.status !== 'cancelled' &&
+            ['scheduled', 'in_transit', 'partially_paid'].includes(order.status) &&
+            targetItems.length > 0 &&
+            targetItems.every((it: any) => it.status === 'pending_inspection');
+
+          if (!isEligible) {
+            const currentStatus = order ? order.status : 'missing';
+            transaction.update(paymentRef, {
+              status: 'success',
+              paidAt: new Date().toISOString(),
+              needsRefund: true,
+              refundReason: `Order items not eligible for payment (order status: ${currentStatus})`
+            });
+
+            const complaintId = `comp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+            const cRef = adminDb.collection('complaints').doc(complaintId);
+            transaction.set(cRef, {
+              id: complaintId,
+              type: 'payment_needs_refund',
+              reason: 'Customer paid for goods but order items were not eligible',
+              description: `Customer paid ₦${payment.amountNaira} for order ${order?.orderNumber || payment.orderId} but items could not be accepted. Refund this payment from the Paystack dashboard.`,
+              reference,
+              orderId: payment.orderId,
+              buyerId: payment.buyerUid || order?.buyerId || '',
+              status: 'open',
+              createdAt: new Date().toISOString()
+            });
+
+            return {
+              success: true,
+              retry: false,
+              message: 'Payment recorded, flagged for refund as order items were not eligible',
+              order
+            };
+          }
+        }
+
+        // --- WRITES FOR VALID PAYMENTS ---
         transaction.update(paymentRef, {
           status: 'processing',
           processingAt: new Date().toISOString()
@@ -468,69 +567,59 @@ async function handlePaymentSuccess(reference: string): Promise<{ success: boole
         let updatedOrder: any = null;
 
         // (a) Delivery Fee Payment
-        if (payment.type === 'delivery_fee' && payment.orderId) {
-          const orderRef = adminDb.collection('orders').doc(payment.orderId);
-          const orderSnap = await transaction.get(orderRef);
-          if (orderSnap.exists) {
-            const order = orderSnap.data();
-            order.deliveryFeePaid = true;
-            order.upfrontTotalPaid = payment.amountNaira;
-            order.status = 'scheduled';
-            order.paymentStatus = 'delivery_fee_paid';
-            order.contactShared = true;
-            order.updatedAt = new Date().toISOString();
-            transaction.set(orderRef, order, { merge: true });
-            updatedOrder = order;
-          }
+        if (payment.type === 'delivery_fee' && orderSnap && orderSnap.exists) {
+          const order = orderSnap.data();
+          order.deliveryFeePaid = true;
+          order.upfrontTotalPaid = payment.amountNaira;
+          order.status = 'scheduled';
+          order.paymentStatus = 'delivery_fee_paid';
+          order.contactShared = true;
+          order.updatedAt = new Date().toISOString();
+          transaction.set(orderRef, order, { merge: true });
+          updatedOrder = order;
         }
 
         // (b) Goods Payment at Handover
-        if (payment.type === 'goods' && payment.orderId) {
-          const orderRef = adminDb.collection('orders').doc(payment.orderId);
-          const orderSnap = await transaction.get(orderRef);
-          if (orderSnap.exists) {
-            const order = orderSnap.data();
-            const targetItemIds = new Set(payment.itemIds || []);
-            let newlyPaidAmount = 0;
+        if (payment.type === 'goods' && orderSnap && orderSnap.exists) {
+          const order = orderSnap.data();
+          const targetItemIds = new Set(payment.itemIds || []);
+          let newlyPaidAmount = 0;
 
-            order.items = order.items.map((item: any) => {
-              if (targetItemIds.has(item.id) || targetItemIds.has(item.itemCode) || (!payment.itemIds || payment.itemIds.length === 0)) {
-                // Mark ONLY items on the record that are still unpaid
-                if (item.status === 'pending_inspection') {
-                  item.status = 'paid';
-                  item.paidAt = new Date().toISOString();
-                  item.paidAmount = item.price * item.quantity;
-                  item.paymentReference = reference;
-                  newlyPaidAmount += item.paidAmount;
-                }
+          order.items = order.items.map((item: any) => {
+            if (targetItemIds.has(item.id) || targetItemIds.has(item.itemCode) || (!payment.itemIds || payment.itemIds.length === 0)) {
+              if (item.status === 'pending_inspection') {
+                item.status = 'paid';
+                item.paidAt = new Date().toISOString();
+                item.paidAmount = item.price * item.quantity;
+                item.paymentReference = reference;
+                newlyPaidAmount += item.paidAmount;
               }
-              return item;
-            });
-
-            // Use commission saved on the payment record
-            const commissionNow = (typeof payment.commission === 'number') 
-              ? payment.commission 
-              : Math.round(newlyPaidAmount * COMMISSION_RATE);
-
-            order.goodsPaid = (order.goodsPaid || 0) + newlyPaidAmount;
-            order.commissionCollected = (order.commissionCollected || 0) + commissionNow;
-            order.platformCommission = (order.platformCommission || 0) + commissionNow;
-            order.sellerPayoutAmount = (order.sellerPayoutAmount || 0) + (newlyPaidAmount - commissionNow);
-
-            const allItemsSettled = order.items.every((it: any) => it.status === 'paid' || it.status === 'rejected');
-            if (allItemsSettled) {
-              order.status = 'paid_completed';
-              order.paymentStatus = 'paid_completed';
-              order.completedAt = new Date().toISOString();
-            } else {
-              order.status = 'partially_paid';
-              order.paymentStatus = 'partially_paid';
             }
+            return item;
+          });
 
-            order.updatedAt = new Date().toISOString();
-            transaction.set(orderRef, order, { merge: true });
-            updatedOrder = order;
+          const commissionNow = (typeof payment.commission === 'number') 
+            ? payment.commission 
+            : Math.round(newlyPaidAmount * COMMISSION_RATE);
+
+          order.goodsPaid = (order.goodsPaid || 0) + newlyPaidAmount;
+          order.commissionCollected = (order.commissionCollected || 0) + commissionNow;
+          order.platformCommission = (order.platformCommission || 0) + commissionNow;
+          order.sellerPayoutAmount = (order.sellerPayoutAmount || 0) + (newlyPaidAmount - commissionNow);
+
+          const allItemsSettled = order.items.every((it: any) => it.status === 'paid' || it.status === 'rejected');
+          if (allItemsSettled) {
+            order.status = 'paid_completed';
+            order.paymentStatus = 'paid_completed';
+            order.completedAt = new Date().toISOString();
+          } else {
+            order.status = 'partially_paid';
+            order.paymentStatus = 'partially_paid';
           }
+
+          order.updatedAt = new Date().toISOString();
+          transaction.set(orderRef, order, { merge: true });
+          updatedOrder = order;
         }
 
         // (c) Vendor Fee Payment
@@ -562,11 +651,11 @@ async function handlePaymentSuccess(reference: string): Promise<{ success: boole
           paidAt: new Date().toISOString()
         });
 
-        return { success: true, message: 'Payment recorded and applied successfully', order: updatedOrder };
+        return { success: true, retry: false, message: 'Payment recorded and applied successfully', order: updatedOrder };
       });
     } catch (txErr: any) {
       console.error(`[Payment Transaction Error] Reference ${reference}:`, txErr);
-      throw txErr;
+      return { success: false, retry: true, message: txErr.message || 'Payment transaction failed' };
     }
   }
 
@@ -574,7 +663,7 @@ async function handlePaymentSuccess(reference: string): Promise<{ success: boole
   payment.status = 'success';
   payment.paidAt = new Date().toISOString();
   await savePaymentRecord(reference, payment);
-  return { success: true, message: 'Payment recorded successfully (demo)' };
+  return { success: true, retry: false, message: 'Payment recorded successfully (demo)' };
 }
 
 // Background Task: Auto-settle overdue orders, release stock reservations, apply rules P2, P4, and P4b
@@ -697,23 +786,25 @@ async function runAutoSettleAndReservations() {
 
       // Rule P4: Pickup and free-delivery orders, buyer ghosts
       // 24 hours after the deadline, if order still scheduled with nothing paid, no item rejected,
-      // not cancelled by buyer, NO seller report, and NO buyer complaint:
+      // not cancelled by buyer, NO seller report, and buyer did not report seller unreachable:
       // suspend BUYER for 30 days (bannedUntilMs), cancel order and restore stock.
       if (isPickupOrFree) {
+        // B2: Skip only when there is a seller report (sellerReport or buyerReportedRefusal) or sellerUnreachableReported
+        if (order.sellerReport || order.buyerReportedRefusal || order.sellerUnreachableReported) {
+          continue;
+        }
+
         const p4Deadline = (order.deliveryDeadlineMs || 0) + (BUYER_GHOST_GRACE_HOURS * 3600 * 1000);
         if (order.deliveryDeadlineMs && now > p4Deadline) {
-          const hasSellerReport = !!order.sellerReport || !!order.buyerReportedRefusal;
-          const hasComplaint = !!order.complaintFiled;
           const hasPaidItems = (order.itemsTotalPaid || 0) > 0 || (order.items || []).some((i: any) => i.status === 'paid');
           const hasRejectedItems = (order.items || []).some((i: any) => i.status === 'rejected');
 
-          if (!hasSellerReport && !hasComplaint && !hasPaidItems && !hasRejectedItems && order.status !== 'cancelled') {
+          if (!hasPaidItems && !hasRejectedItems && order.status !== 'cancelled') {
             const bannedUntilMs = now + (BAN_DAYS * 24 * 3600 * 1000);
             if (order.buyerId) {
               try {
                 await adminDb.collection('users').doc(order.buyerId).update({
                   bannedUntilMs,
-                  isBanned: true,
                   banReason: `Ghosted pickup/free-delivery order ${order.orderNumber} past 24-hour grace.`
                 });
               } catch (bErr: any) {
@@ -792,13 +883,14 @@ async function startServer() {
         // Check if user is suspended (exempt /api/me/ban-status and /api/me/ban-explanation)
         const isBanExempt = req.path === '/api/me/ban-status' || req.path === '/api/me/ban-explanation';
         if (!isBanExempt) {
-          const userProfile = await getUserProfile(decoded.uid);
-          if (userProfile?.bannedUntilMs && userProfile.bannedUntilMs > Date.now()) {
-            const dateStr = new Date(userProfile.bannedUntilMs).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos' });
-            return res.status(403).json({ error: `Your account is suspended until ${dateStr} due to a safety infraction.` });
-          }
-          if (userProfile?.isBanned) {
-            return res.status(403).json({ error: 'Your account is suspended.' });
+          try {
+            const userProfile = await getUserProfile(decoded.uid);
+            if (userProfile?.bannedUntilMs && userProfile.bannedUntilMs > Date.now()) {
+              const dateStr = new Date(userProfile.bannedUntilMs).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos' });
+              return res.status(403).json({ error: `Your account is suspended until ${dateStr} due to a safety infraction.` });
+            }
+          } catch (profileErr: any) {
+            console.warn(`[requireAuth] Notice: Could not read suspension status for ${decoded.uid}:`, profileErr.message);
           }
         }
         return next();
@@ -901,9 +993,6 @@ async function startServer() {
         const dateStr = new Date(buyerProfile.bannedUntilMs).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos' });
         return res.status(403).json({ error: `Your account is suspended until ${dateStr} due to a safety infraction.` });
       }
-      if (buyerProfile?.isBanned) {
-        return res.status(403).json({ error: 'Your account is suspended.' });
-      }
 
       // Validate buyer phone number strictly with Nigerian mobile format
       const rawPhone = (buyerInfo?.phone || req.body.phone || buyerProfile?.phone || '').trim().replace(/\s+/g, '');
@@ -916,15 +1005,8 @@ async function startServer() {
       const minDateMs = now - 60000;
       const maxDateMs = now + (MAX_DELIVERY_DAYS * 24 * 3600 * 1000) + (12 * 3600 * 1000);
 
-      // Re-read each product from Firestore with admin SDK (ignore client price, deliveryFee, sellerId, etc.)
-      interface ValidatedItem {
-        productId: string;
-        quantity: number;
-        productDoc: any;
-        sellerId: string;
-      }
-      const validatedItems: ValidatedItem[] = [];
-
+      // 1. Merge duplicate items in cart by productId (summing quantities)
+      const mergedItemsMap = new Map<string, number>();
       for (const rawItem of items) {
         const pId = rawItem.productId || rawItem.product?.id || rawItem.id;
         const qty = rawItem.quantity;
@@ -935,7 +1017,19 @@ async function startServer() {
         if (!Number.isInteger(qty) || qty < 1) {
           return res.status(400).json({ error: 'Product quantity must be a whole number greater than 0' });
         }
+        mergedItemsMap.set(pId, (mergedItemsMap.get(pId) || 0) + qty);
+      }
 
+      // Re-read each product from Firestore with admin SDK (ignore client price, deliveryFee, sellerId, etc.)
+      interface ValidatedItem {
+        productId: string;
+        quantity: number;
+        productDoc: any;
+        sellerId: string;
+      }
+      const validatedItems: ValidatedItem[] = [];
+
+      for (const [pId, qty] of mergedItemsMap.entries()) {
         let pDoc: any = null;
         if (adminDb) {
           const pSnap = await adminDb.collection('products').doc(pId).get();
@@ -943,11 +1037,17 @@ async function startServer() {
             pDoc = { id: pSnap.id, ...pSnap.data() };
           }
         } else if (PAYMENTS_MODE === 'demo') {
-          pDoc = rawItem.product || { id: pId, title: 'Demo Item', price: 1000, stock: 10, status: 'approved', sellerId: 'demo_seller_1' };
+          const rawItem = items.find((it: any) => (it.productId || it.product?.id || it.id) === pId);
+          pDoc = rawItem?.product || { id: pId, title: 'Demo Item', price: 1000, stock: 10, status: 'approved', sellerId: 'demo_seller_1' };
         }
 
         if (!pDoc) {
           return res.status(400).json({ error: `Product not found (ID: ${pId})` });
+        }
+
+        // Rule: Buyer cannot purchase their own product
+        if (pDoc.sellerId === buyerUid) {
+          return res.status(400).json({ error: `You cannot purchase your own product ("${pDoc.title}").` });
         }
 
         if (pDoc.status !== 'approved') {
@@ -975,7 +1075,7 @@ async function startServer() {
         sellerGroups.get(vItem.sellerId)!.push(vItem);
       }
 
-      // Verify each seller status (verified, unsuspended), phone, and fulfillment options
+      // Verify each seller status (verified, unsuspended), phone, subaccount, and fulfillment options
       let newUnpaidPickupOrdersCount = 0;
       const sellerPhoneMap = new Map<string, string>();
 
@@ -985,9 +1085,19 @@ async function startServer() {
         if (adminDb) {
           const profSnap = await adminDb.collection('sellerProfiles').doc(sellerId).get();
           if (profSnap.exists) sellerProfile = profSnap.data();
+        } else if (clientDb) {
+          try {
+            const profSnap = await getDoc(doc(clientDb, 'sellerProfiles', sellerId));
+            if (profSnap.exists()) sellerProfile = profSnap.data();
+          } catch {}
         }
 
-        const isVerified = (sellerUser?.isVerifiedSeller === true || sellerUser?.sellerVerificationStatus === 'verified');
+        const isVerified = (
+          sellerUser?.isVerifiedSeller === true ||
+          sellerUser?.sellerVerificationStatus === 'verified' ||
+          sellerProfile?.isVerifiedSeller === true ||
+          PAYMENTS_MODE === 'demo'
+        );
         if (!isVerified) {
           return res.status(400).json({ error: `Seller for "${vList[0].productDoc.title}" is not a verified seller.` });
         }
@@ -997,8 +1107,14 @@ async function startServer() {
           return res.status(400).json({ error: `Seller for "${vList[0].productDoc.title}" is currently suspended.` });
         }
 
-        // Require saved Nigerian mobile number on sellerPrivate/{sellerId}
+        // Require saved Nigerian mobile number & seller subaccount on sellerPrivate/{sellerId}
         const priv = await getSellerPrivate(sellerId);
+        if (PAYMENTS_MODE !== 'demo' && !priv?.subaccountCode) {
+          return res.status(400).json({
+            error: "This seller's payouts are not set up yet"
+          });
+        }
+
         const sPhone = (priv?.phone || '').trim();
         if (PAYMENTS_MODE !== 'demo' && !sPhone) {
           return res.status(400).json({
@@ -1007,9 +1123,29 @@ async function startServer() {
         }
         sellerPhoneMap.set(sellerId, sPhone || '08012345678');
 
-        // Check scheduled date and fulfillment
+        // Check scheduled date and fulfillment (scheduledDate is REQUIRED for both pickup and delivery)
         const config = (sellerConfigs && sellerConfigs[sellerId]) || {};
         const fulfillmentType = config.fulfillmentType === 'buyer_pickup' ? 'buyer_pickup' : 'seller_delivers';
+
+        // Robust fallback: default to tomorrow (+24h) if client omitted scheduledDate
+        let rawDate = config.scheduledDate || req.body.scheduledDate;
+        if (!rawDate || typeof rawDate !== 'string' || !rawDate.trim()) {
+          const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+          rawDate = tomorrow.toISOString().split('T')[0];
+        }
+        config.scheduledDate = rawDate;
+        if (sellerConfigs && typeof sellerConfigs === 'object') {
+          sellerConfigs[sellerId] = config;
+        }
+
+        const dateStr = String(config.scheduledDate).split('T')[0];
+        let chosenDeadlineMs = Date.parse(`${dateStr}T23:59:59+01:00`);
+        if (isNaN(chosenDeadlineMs) || chosenDeadlineMs < minDateMs || chosenDeadlineMs > maxDateMs) {
+          const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+          const fallbackStr = tomorrow.toISOString().split('T')[0];
+          chosenDeadlineMs = Date.parse(`${fallbackStr}T23:59:59+01:00`);
+          config.scheduledDate = fallbackStr;
+        }
 
         // Check against listing allowed fulfillment options
         for (const item of vList) {
@@ -1033,24 +1169,17 @@ async function startServer() {
           newUnpaidPickupOrdersCount++;
         }
 
-        if (config.scheduledDate) {
-          const chosenDate = new Date(config.scheduledDate);
-          const chosenDateMs = chosenDate.getTime();
-          if (isNaN(chosenDateMs) || chosenDateMs < minDateMs || chosenDateMs > maxDateMs) {
-            return res.status(400).json({ error: 'Scheduled date for seller order must be within the next 7 days.' });
-          }
-
-          // If listing has pickup days, ensure chosen day of week matches (supports string and numeric days)
-          if (fulfillmentType === 'buyer_pickup') {
-            const dayOfWeek = chosenDate.getDay();
-            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-            const chosenDayName = dayNames[dayOfWeek];
-            for (const item of vList) {
-              if (item.productDoc.pickup?.days && Array.isArray(item.productDoc.pickup.days) && item.productDoc.pickup.days.length > 0) {
-                const normalizedDays = item.productDoc.pickup.days.map((d: any) => String(d).toLowerCase());
-                if (!normalizedDays.includes(chosenDayName) && !item.productDoc.pickup.days.includes(dayOfWeek)) {
-                  return res.status(400).json({ error: `Chosen pickup date does not match available pickup days for "${item.productDoc.title}".` });
-                }
+        // If listing has pickup days, ensure chosen day of week matches (supports string and numeric days)
+        if (fulfillmentType === 'buyer_pickup') {
+          const chosenDate = new Date(`${dateStr}T12:00:00+01:00`);
+          const dayOfWeek = chosenDate.getDay();
+          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+          const chosenDayName = dayNames[dayOfWeek];
+          for (const item of vList) {
+            if (item.productDoc.pickup?.days && Array.isArray(item.productDoc.pickup.days) && item.productDoc.pickup.days.length > 0) {
+              const normalizedDays = item.productDoc.pickup.days.map((d: any) => String(d).toLowerCase());
+              if (!normalizedDays.includes(chosenDayName) && !item.productDoc.pickup.days.includes(dayOfWeek)) {
+                return res.status(400).json({ error: `Chosen pickup date does not match available pickup days for "${item.productDoc.title}".` });
               }
             }
           }
@@ -1086,7 +1215,7 @@ async function startServer() {
 
       if (adminDb) {
         await adminDb.runTransaction(async (transaction: any) => {
-          // Re-verify stock in transaction
+          // --- 1. ALL READS FIRST (Strict Firestore transaction requirement) ---
           for (const vItem of validatedItems) {
             const pRef = adminDb.collection('products').doc(vItem.productId);
             const pSnap = await transaction.get(pRef);
@@ -1097,6 +1226,11 @@ async function startServer() {
             if (typeof pData.stock === 'number' && pData.stock < vItem.quantity) {
               throw new Error(`Insufficient stock for "${pData.title}" during checkout.`);
             }
+          }
+
+          // --- 2. ALL WRITES SECOND ---
+          for (const vItem of validatedItems) {
+            const pRef = adminDb.collection('products').doc(vItem.productId);
             transaction.update(pRef, {
               stock: FieldValue.increment(-vItem.quantity)
             });
@@ -1122,11 +1256,8 @@ async function startServer() {
             const platformCommission = Math.round(subtotal * COMMISSION_RATE);
             const sellerPayoutAmount = subtotal - platformCommission;
 
-            let deadlineDays = 7;
-            const deliveryDeadlineMs = config.scheduledDate 
-              ? new Date(config.scheduledDate).getTime() + (23 * 3600 * 1000 + 59 * 60 * 1000)
-              : now + (deadlineDays * 24 * 3600 * 1000);
-            
+            const dateStr = String(config.scheduledDate).split('T')[0];
+            const deliveryDeadlineMs = Date.parse(`${dateStr}T23:59:59+01:00`);
             const cancelCutoffMs = deliveryDeadlineMs - (CANCEL_CUTOFF_HOURS * 3600 * 1000);
             const isCommittedImmediately = (fulfillmentType === 'buyer_pickup' || deliveryFee === 0);
 
@@ -1287,6 +1418,10 @@ async function startServer() {
   // 4. Initialize Payment: Paystack Checkout or Demo Sandbox Generator
   app.post('/api/payments/initialize', requireAuth, requireStorage, async (req: any, res: Response) => {
     try {
+      if (PAYMENTS_MODE === 'unconfigured') {
+        return res.status(503).json({ error: 'Payments are not configured' });
+      }
+
       const { type, orderId, itemIds, all } = req.body;
       const appBaseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
 
@@ -1401,10 +1536,97 @@ async function startServer() {
         return res.status(400).json({ error: `Invalid payment type: ${type}` });
       }
 
+      // Check for reusable pending payment created in last 30 minutes
+      const thirtyMinutesAgoMs = Date.now() - (30 * 60 * 1000);
+      let reusablePayment: any = null;
+      if (adminDb) {
+        let q = adminDb.collection('payments')
+          .where('buyerUid', '==', req.user.uid)
+          .where('status', '==', 'pending')
+          .where('type', '==', type);
+        if (orderId) {
+          q = q.where('orderId', '==', orderId);
+        }
+        const snap = await q.get();
+        for (const doc of snap.docs) {
+          const d = doc.data();
+          const createdMs = d.createdAt ? new Date(d.createdAt).getTime() : 0;
+          if (createdMs >= thirtyMinutesAgoMs && d.authorization_url) {
+            if (type === 'goods') {
+              const currentSorted = (selectedItemIds || []).slice().sort().join(',');
+              const docSorted = (d.itemIds || []).slice().sort().join(',');
+              if (currentSorted !== docSorted) continue;
+            }
+            reusablePayment = d;
+            break;
+          }
+        }
+      } else if (PAYMENTS_MODE === 'demo') {
+        for (const p of memoryPayments.values()) {
+          const createdMs = p.createdAt ? new Date(p.createdAt).getTime() : 0;
+          if (p.buyerUid === req.user.uid && p.status === 'pending' && p.type === type && (!orderId || p.orderId === orderId) && createdMs >= thirtyMinutesAgoMs && p.authorization_url) {
+            if (type === 'goods') {
+              const currentSorted = (selectedItemIds || []).slice().sort().join(',');
+              const docSorted = (p.itemIds || []).slice().sort().join(',');
+              if (currentSorted !== docSorted) continue;
+            }
+            reusablePayment = p;
+            break;
+          }
+        }
+      }
+
+      if (reusablePayment) {
+        return res.json({
+          status: true,
+          paymentsMode: PAYMENTS_MODE,
+          reference: reusablePayment.reference,
+          authorization_url: reusablePayment.authorization_url,
+          access_code: reusablePayment.access_code,
+          amount: reusablePayment.amountNaira
+        });
+      }
+
       const reference = `ABPAY_${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
       const amountKobo = Math.round(amountNaira * 100);
 
-      // Save payment intent
+      let authorization_url = '';
+      let access_code: string | undefined = undefined;
+
+      // 1. DEMO MODE
+      if (PAYMENTS_MODE === 'demo') {
+        authorization_url = `${appBaseUrl}/api/payments/demo-pay?reference=${reference}`;
+      } else {
+        // 2. LIVE / TEST MODE: Real Paystack API call
+        const callback_url = `${appBaseUrl}/api/payments/verify?reference=${reference}`;
+        const paystackPayload: any = {
+          email: req.user.email || 'student@campus.edu.ng',
+          amount: amountKobo,
+          reference,
+          callback_url,
+          metadata: {
+            reference,
+            orderId,
+            type,
+            buyerUid: req.user.uid
+          }
+        };
+
+        if (subaccountCode) {
+          paystackPayload.subaccount = subaccountCode;
+          paystackPayload.bearer = 'account';
+          if (type === 'delivery_fee') {
+            paystackPayload.transaction_charge = Math.round(gatewayFee * 100);
+          } else if (type === 'goods') {
+            paystackPayload.transaction_charge = Math.round((commission + gatewayFee) * 100);
+          }
+        }
+
+        const paystackData = await paystackRequest('/transaction/initialize', 'POST', paystackPayload);
+        authorization_url = paystackData.authorization_url;
+        access_code = paystackData.access_code;
+      }
+
       const paymentRecord: PaymentRecord = {
         reference,
         type,
@@ -1420,57 +1642,20 @@ async function startServer() {
         subaccountCode,
         status: 'pending',
         buyerUid: req.user.uid,
+        authorization_url,
+        access_code,
         createdAt: new Date().toISOString()
       };
 
       await savePaymentRecord(reference, paymentRecord);
 
-      // 1. DEMO MODE
-      if (PAYMENTS_MODE === 'demo') {
-        const demoAuthUrl = `${appBaseUrl}/api/payments/demo-pay?reference=${reference}`;
-        return res.json({
-          status: true,
-          paymentsMode: 'demo',
-          reference,
-          authorization_url: demoAuthUrl,
-          amount: amountNaira
-        });
-      }
-
-      // 2. LIVE / TEST MODE: Real Paystack API call
-      const callback_url = `${appBaseUrl}/api/payments/verify?reference=${reference}`;
-      const paystackPayload: any = {
-        email: req.user.email || 'student@campus.edu.ng',
-        amount: amountKobo,
-        reference,
-        callback_url,
-        metadata: {
-          reference,
-          orderId,
-          type,
-          buyerUid: req.user.uid
-        }
-      };
-
-      // Split payout: for delivery_fee and goods, subaccountCode is guaranteed
-      if (subaccountCode) {
-        paystackPayload.subaccount = subaccountCode;
-        paystackPayload.bearer = 'account';
-        if (type === 'delivery_fee') {
-          paystackPayload.transaction_charge = Math.round(gatewayFee * 100);
-        } else if (type === 'goods') {
-          paystackPayload.transaction_charge = Math.round((commission + gatewayFee) * 100);
-        }
-      }
-
-      const paystackData = await paystackRequest('/transaction/initialize', 'POST', paystackPayload);
-
       res.json({
         status: true,
         paymentsMode: PAYMENTS_MODE,
         reference,
-        authorization_url: paystackData.authorization_url,
-        access_code: paystackData.access_code
+        authorization_url,
+        access_code,
+        amount: amountNaira
       });
     } catch (err: any) {
       console.error('[Paystack Init Error]:', err);
@@ -1502,23 +1687,25 @@ async function startServer() {
 
   // 5. Verify Target Callback & Idempotent Success Execution
   app.get('/api/payments/verify', async (req: Request, res: Response) => {
+    if (PAYMENTS_MODE === 'unconfigured') {
+      return res.status(503).json({ error: 'Payments are not configured' });
+    }
+
     const reference = (req.query.reference as string || '').trim();
     if (!reference) {
       return res.redirect('/?payment_error=missing_reference');
     }
 
     try {
-      if (PAYMENTS_MODE !== 'demo') {
-        // Query Paystack verify endpoint
-        const verifyData = await paystackRequest(`/transaction/verify/${reference}`);
-        if (verifyData.status !== 'success') {
-          return res.redirect(`/?payment_error=unsuccessful&reference=${reference}`);
-        }
-      }
-
       const result = await handlePaymentSuccess(reference);
-      const orderIdParam = result.order?.id ? `&orderId=${result.order.id}` : '';
-      res.redirect(`/?payment_status=success&reference=${reference}${orderIdParam}`);
+      if (result.success) {
+        const orderIdParam = result.order?.id ? `&orderId=${result.order.id}` : '';
+        return res.redirect(`/?payment_status=success&reference=${reference}${orderIdParam}`);
+      } else if (result.retry) {
+        return res.redirect(`/?payment_status=pending&reference=${reference}`);
+      } else {
+        return res.redirect(`/?payment_error=${encodeURIComponent(result.message)}`);
+      }
     } catch (err: any) {
       console.error('[Payment Verify Error]:', err);
       res.redirect(`/?payment_error=${encodeURIComponent(err.message)}`);
@@ -1550,7 +1737,28 @@ async function startServer() {
         const reference = event.data?.reference;
         if (reference) {
           console.log(`[Webhook] Processing verified charge.success for reference: ${reference}`);
-          await handlePaymentSuccess(reference);
+          const result = await handlePaymentSuccess(reference);
+          if (!result.success) {
+            if (result.retry) {
+              // Return HTTP 500 so Paystack automatically retries webhook
+              return res.status(500).json({ error: result.message });
+            } else {
+              // Permanent failure: respond 200 to acknowledge and log admin complaint
+              if (adminDb) {
+                const cId = `comp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                await adminDb.collection('complaints').doc(cId).set({
+                  id: cId,
+                  type: 'payment_failed',
+                  reason: 'Payment verification failed',
+                  description: `Payment verification failed for reference ${reference}: ${result.message}`,
+                  reference,
+                  status: 'open',
+                  createdAt: new Date().toISOString()
+                });
+              }
+              return res.status(200).json({ status: false, message: result.message });
+            }
+          }
         }
       }
 
@@ -1872,7 +2080,8 @@ async function startServer() {
             subaccountVerified: true
           }, { merge: true });
         } catch (dbErr: any) {
-          console.warn('[Verify Subaccount DB Error]:', dbErr.message);
+          console.error('[Verify Subaccount DB Error]:', dbErr);
+          return res.status(500).json({ error: `Failed to save verified subaccount: ${dbErr.message}` });
         }
       }
 
@@ -1884,7 +2093,9 @@ async function startServer() {
           await setDoc(doc(clientDb, 'sellerProfiles', sellerId), {
             subaccountVerified: true
           }, { merge: true });
-        } catch {}
+        } catch (cErr: any) {
+          console.error('[Verify Subaccount clientDb Error]:', cErr);
+        }
       }
 
       res.json({
@@ -1911,7 +2122,10 @@ async function startServer() {
             isVerifiedSeller: false,
             rejectionReason: reason || 'Information could not be verified'
           });
-        } catch {}
+        } catch (dbErr: any) {
+          console.error('[Reject Seller DB Error]:', dbErr);
+          return res.status(500).json({ error: `Failed to reject seller: ${dbErr.message}` });
+        }
       }
 
       if (clientDb) {
@@ -1920,7 +2134,9 @@ async function startServer() {
             sellerVerificationStatus: 'rejected',
             isVerifiedSeller: false
           });
-        } catch {}
+        } catch (cErr: any) {
+          console.error('[Reject Seller clientDb Error]:', cErr);
+        }
       }
 
       res.json({ success: true, message: 'Seller verification rejected.' });
@@ -1940,14 +2156,19 @@ async function startServer() {
         try {
           await adminDb.collection('users').doc(sellerId).update({ suspendedUntilMs });
           await adminDb.collection('sellerProfiles').doc(sellerId).update({ isSuspended: true });
-        } catch {}
+        } catch (dbErr: any) {
+          console.error('[Suspend Seller DB Error]:', dbErr);
+          return res.status(500).json({ error: `Failed to suspend seller: ${dbErr.message}` });
+        }
       }
 
       if (clientDb) {
         try {
           await updateDoc(doc(clientDb, 'users', sellerId), { suspendedUntilMs });
           await updateDoc(doc(clientDb, 'sellerProfiles', sellerId), { isSuspended: true });
-        } catch {}
+        } catch (cErr: any) {
+          console.error('[Suspend Seller clientDb Error]:', cErr);
+        }
       }
 
       res.json({ success: true, sellerId, suspendedUntilMs, message: `Seller suspended for ${durationDays} days.` });
@@ -1965,14 +2186,19 @@ async function startServer() {
         try {
           await adminDb.collection('users').doc(sellerId).update({ suspendedUntilMs: 0 });
           await adminDb.collection('sellerProfiles').doc(sellerId).update({ isSuspended: false });
-        } catch {}
+        } catch (dbErr: any) {
+          console.error('[Unsuspend Seller DB Error]:', dbErr);
+          return res.status(500).json({ error: `Failed to unsuspend seller: ${dbErr.message}` });
+        }
       }
 
       if (clientDb) {
         try {
           await updateDoc(doc(clientDb, 'users', sellerId), { suspendedUntilMs: 0 });
           await updateDoc(doc(clientDb, 'sellerProfiles', sellerId), { isSuspended: false });
-        } catch {}
+        } catch (cErr: any) {
+          console.error('[Unsuspend Seller clientDb Error]:', cErr);
+        }
       }
 
       res.json({ success: true, sellerId, message: 'Seller suspension lifted successfully.' });
@@ -2268,6 +2494,17 @@ async function startServer() {
         return res.status(400).json({ error: 'Order cannot be cancelled in its current state.' });
       }
 
+      // B1: Orders with a status of partially_paid can never be cancelled by buyer or seller
+      if (order.status === 'partially_paid') {
+        return res.status(400).json({ error: 'Partially paid orders cannot be cancelled by buyer or seller.' });
+      }
+
+      // B1: Refuse to cancel an order that has any paid item or goodsPaid > 0
+      const hasPaidItems = (order.goodsPaid && order.goodsPaid > 0) || (order.items || []).some((it: any) => it.status === 'paid');
+      if (hasPaidItems) {
+        return res.status(400).json({ error: 'Order cannot be cancelled because payment for items has already been made.' });
+      }
+
       if (isBuyer && !isOwner) {
         // Enforce 48-hour cutoff before delivery deadline
         const cutoff = order.cancelCutoffMs || (order.deliveryDeadlineMs ? order.deliveryDeadlineMs - (CANCEL_CUTOFF_HOURS * 3600 * 1000) : 0);
@@ -2361,6 +2598,16 @@ async function startServer() {
       const isPickupOrFree = (order.fulfillmentType === 'buyer_pickup' || (order.deliveryFee || 0) === 0);
       if (!isPickupOrFree) {
         return res.status(400).json({ error: 'This action applies to pickup and free-delivery orders only.' });
+      }
+
+      // B1: Refuse if partially paid or has paid items or goodsPaid > 0
+      if (order.status === 'partially_paid' || order.status === 'paid_completed') {
+        return res.status(400).json({ error: 'Partially paid or completed orders cannot be marked unreachable or cancelled.' });
+      }
+
+      const hasPaidItems = (order.goodsPaid && order.goodsPaid > 0) || (order.items || []).some((it: any) => it.status === 'paid');
+      if (hasPaidItems) {
+        return res.status(400).json({ error: 'Order cannot be marked unreachable because payment for items has already been made.' });
       }
 
       order.sellerUnreachableReported = true;
@@ -2583,7 +2830,10 @@ async function startServer() {
       if (adminDb) {
         try {
           await adminDb.collection('complaints').doc(complaintId).set(complaintRecord);
-        } catch {}
+        } catch (dbErr: any) {
+          console.error('[Refund Dispute DB Error]:', dbErr);
+          return res.status(500).json({ error: `Failed to record refund dispute: ${dbErr.message}` });
+        }
       }
 
       await saveOrderToStorage(orderId, order);
@@ -2642,7 +2892,10 @@ async function startServer() {
       if (adminDb) {
         try {
           await adminDb.collection('complaints').doc(complaintId).set(complaintRecord);
-        } catch {}
+        } catch (dbErr: any) {
+          console.error('[Buyer Refusal DB Error]:', dbErr);
+          return res.status(500).json({ error: `Failed to save refusal report: ${dbErr.message}` });
+        }
       }
 
       order.buyerReportedRefusal = true;
@@ -2671,17 +2924,10 @@ async function startServer() {
       const bannedUntilMs = Date.now() + (BAN_DAYS * 24 * 3600 * 1000);
 
       if (adminDb) {
-        try {
-          await adminDb.collection('users').doc(userId).update({
-            bannedUntilMs,
-            isBanned: false
-          });
-        } catch {}
-      }
-      if (clientDb) {
-        try {
-          await updateDoc(doc(clientDb, 'users', userId), { bannedUntilMs });
-        } catch {}
+        await adminDb.collection('users').doc(userId).update({
+          bannedUntilMs,
+          isBanned: FieldValue.delete()
+        });
       }
 
       res.json({
@@ -2775,16 +3021,15 @@ async function startServer() {
     try {
       const userId = req.params.userId;
       if (adminDb) {
-        try {
-          await adminDb.collection('users').doc(userId).update({
-            bannedUntilMs: 0,
-            banLiftedAt: new Date().toISOString()
-          });
-          await adminDb.collection('adminBanReviews').doc(userId).set({
-            status: 'lifted',
-            reviewedAt: new Date().toISOString()
-          }, { merge: true });
-        } catch {}
+        await adminDb.collection('users').doc(userId).update({
+          bannedUntilMs: 0,
+          banLiftedAt: new Date().toISOString(),
+          isBanned: FieldValue.delete()
+        });
+        await adminDb.collection('adminBanReviews').doc(userId).set({
+          status: 'lifted',
+          reviewedAt: new Date().toISOString()
+        }, { merge: true });
       }
       res.json({ success: true, userId, message: 'Ban lifted successfully.' });
     } catch (err: any) {
@@ -2802,7 +3047,10 @@ async function startServer() {
             status: 'retained',
             reviewedAt: new Date().toISOString()
           }, { merge: true });
-        } catch {}
+        } catch (dbErr: any) {
+          console.error('[Keep Ban DB Error]:', dbErr);
+          return res.status(500).json({ error: `Failed to retain ban: ${dbErr.message}` });
+        }
       }
       res.json({ success: true, userId, message: 'Ban decision confirmed: ban retained.' });
     } catch (err: any) {
@@ -2839,7 +3087,10 @@ async function startServer() {
       if (adminDb) {
         try {
           await adminDb.collection('complaints').doc(complaintId).set(complaintRecord);
-        } catch {}
+        } catch (dbErr: any) {
+          console.error('[File Complaint DB Error]:', dbErr);
+          return res.status(500).json({ error: `Failed to record complaint: ${dbErr.message}` });
+        }
       }
 
       order.status = 'disputed';
@@ -2863,7 +3114,9 @@ async function startServer() {
         try {
           const snap = await adminDb.collection('complaints').doc(disputeId).get();
           if (snap.exists) complaint = snap.data();
-        } catch {}
+        } catch (dbErr: any) {
+          console.error('[Get Dispute DB Error]:', dbErr);
+        }
       }
 
       if (!complaint) return res.status(404).json({ error: 'Dispute record not found' });
@@ -2876,7 +3129,10 @@ async function startServer() {
       if (adminDb) {
         try {
           await adminDb.collection('complaints').doc(disputeId).set(complaint, { merge: true });
-        } catch {}
+        } catch (dbErr: any) {
+          console.error('[Resolve Dispute DB Error]:', dbErr);
+          return res.status(500).json({ error: `Failed to save dispute resolution: ${dbErr.message}` });
+        }
       }
 
       res.json({ success: true, complaint, message: 'Dispute marked resolved.' });
@@ -3009,9 +3265,40 @@ async function startServer() {
   // Periodic interval every 10 minutes
   setInterval(runAutoSettleAndReservations, 10 * 60 * 1000);
 
+  // One-time legacy ban cleanup at boot
+  async function cleanupLegacyBans(): Promise<void> {
+    if (!adminDb) return;
+    try {
+      const snap = await adminDb.collection('users').get();
+      const batch = adminDb.batch();
+      let count = 0;
+      const now = Date.now();
+      snap.forEach((docSnap: any) => {
+        const data = docSnap.data();
+        if ('isBanned' in data) {
+          const updates: any = {
+            isBanned: FieldValue.delete()
+          };
+          if (data.isBanned === true && (!data.bannedUntilMs || data.bannedUntilMs <= now)) {
+            updates.bannedUntilMs = now + (BAN_DAYS * 24 * 3600 * 1000);
+          }
+          batch.update(docSnap.ref, updates);
+          count++;
+        }
+      });
+      if (count > 0) {
+        await batch.commit();
+        console.log(`[Boot Migration] Cleaned up legacy isBanned on ${count} user doc(s).`);
+      }
+    } catch (err: any) {
+      console.error('[Boot Migration] cleanupLegacyBans notice:', err.message);
+    }
+  }
+
   app.listen(port, '0.0.0.0', () => {
     console.log(`Abbason Hub server running at http://0.0.0.0:${port} [${PAYMENTS_MODE.toUpperCase()} MODE]`);
-    // Run background sweep once at server start as required by Phase C
+    // Run background sweep and legacy ban cleanup at server start
+    cleanupLegacyBans().catch(() => {});
     runAutoSettleAndReservations().catch((err: any) => {
       console.error('[Server Start] Initial runAutoSettleAndReservations notice:', err.message);
     });

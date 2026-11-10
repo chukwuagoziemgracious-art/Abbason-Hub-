@@ -142,8 +142,7 @@ service cloud.firestore {
 
     // 2. Public Seller Profiles (No sensitive PII, phone, or bank details)
     match /sellerProfiles/{sellerId} {
-      allow get: if true;
-      allow list: if isAdmin() || (!('isRemoved' in resource.data) || resource.data.isRemoved == false);
+      allow get, list: if true;
       allow create: if isValidId(sellerId) && (
         isAdmin() ||
         (

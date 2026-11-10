@@ -532,7 +532,7 @@ Need help? Contact: support@abbasonhub.com
           {/* Shared Contact & Agreed Delivery Details Card */}
           {(() => {
             const isContactShared = order.contactShared || contactDetails?.contactShared;
-            const sellerPhone = contactDetails?.sellerContact?.phone || order.sellerPhone;
+            const sellerPhone = contactDetails?.sellerContact?.phone;
             const sellerLocation = contactDetails?.sellerContact?.location || order.pickupLandmark;
             const canCancel = order.status !== 'cancelled' && !isCompleted && !order.agreedTime && (!order.cancelCutoffMs || Date.now() < order.cancelCutoffMs);
             const isPickupOrFree = order.fulfillmentMethod === 'buyer_pickup' || (order.fulfillmentMethod === 'seller_delivers' && (order.deliveryFee || 0) === 0);

@@ -114,6 +114,9 @@ export default function App() {
         if (order) setActiveReceiptOrder(order);
       }
       window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get('payment_status') === 'pending') {
+      showToast('Your payment is being confirmed, check your orders in a minute.');
+      window.history.replaceState({}, document.title, window.location.pathname);
     } else if (params.get('payment_error')) {
       showToast('Payment was not completed: ' + params.get('payment_error'));
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -232,7 +235,7 @@ export default function App() {
       )}
 
       {/* Account Suspended Notice Banner (Rule P4) */}
-      {(banStatus?.isBanned || (currentUser.suspendedUntilMs && currentUser.suspendedUntilMs > Date.now())) && (
+      {(((banStatus?.bannedUntilMs ?? 0) > Date.now()) || (currentUser.suspendedUntilMs && currentUser.suspendedUntilMs > Date.now())) && (
         <div className="w-full bg-rose-950/90 border-b border-rose-500/50 py-2 px-4 text-center text-xs text-rose-200 flex items-center justify-center gap-2 relative z-30">
           <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
           <span>

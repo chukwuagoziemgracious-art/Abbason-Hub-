@@ -367,9 +367,7 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
 export async function saveOrderToFirestore(order: Order): Promise<void> {
   const path = `orders/${order.id}`;
   try {
-    // SECURITY INVARIANT: Strip plaintext delivery OTP before database transmission
-    const { deliveryOtpForBuyer, ...cleanOrder } = order as any;
-    await setDoc(doc(db, 'orders', order.id), cleanOrder);
+    await setDoc(doc(db, 'orders', order.id), order);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -378,8 +376,7 @@ export async function saveOrderToFirestore(order: Order): Promise<void> {
 export async function updateOrderInFirestore(orderId: string, partial: Partial<Order>): Promise<void> {
   const path = `orders/${orderId}`;
   try {
-    const { deliveryOtpForBuyer, ...cleanPartial } = partial as any;
-    await updateDoc(doc(db, 'orders', orderId), cleanPartial);
+    await updateDoc(doc(db, 'orders', orderId), partial);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }

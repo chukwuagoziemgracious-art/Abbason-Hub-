@@ -360,7 +360,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/[0.08]">
-            <div className="text-[10px] uppercase font-bold text-emerald-400">Pending Inspection</div>
+            <div className="text-[10px] uppercase font-bold text-emerald-400">Awaiting payment at handover</div>
             <div className="text-base sm:text-lg font-bold text-emerald-300 mt-0.5 tabular-nums font-serif">
               {formatNaira(metrics.pendingEscrowAmount)}
             </div>

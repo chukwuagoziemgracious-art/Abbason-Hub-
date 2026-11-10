@@ -24,7 +24,6 @@ export type PaymentStatus =
   | 'pending_inspection_pay'
   | 'partially_paid'
   | 'paid_completed'
-  | 'escrow_held'
   | 'payout_released'
   | 'refunded';
 
@@ -69,6 +68,7 @@ export interface SellerProfile {
   campusName: string;
   isVerifiedSeller: boolean;
   isSuspended?: boolean;
+  isRemoved?: boolean;
   subaccountVerified?: boolean;
 }
 

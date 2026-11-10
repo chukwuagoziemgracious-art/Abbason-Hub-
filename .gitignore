@@ -4,8 +4,12 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
+.env
+.env.*
 !.env.example
+*.service-account.json
+*serviceAccount*.json
+service-account*.json
 .aistudio/
 .cache/
 

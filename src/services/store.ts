@@ -100,10 +100,14 @@ class Store {
         }
       });
 
-      // Real-time public seller profiles
+      // Real-time public seller profiles (skipping removed vendors)
       subscribeToSellerProfiles((profiles) => {
         this.sellerProfiles.clear();
-        profiles.forEach((p) => this.sellerProfiles.set(p.id, p));
+        profiles.forEach((p) => {
+          if (!p.isRemoved) {
+            this.sellerProfiles.set(p.id, p);
+          }
+        });
         this.notify();
       });
 
@@ -557,6 +561,10 @@ class Store {
       // Must be approved to show up on public catalog
       if (p.status !== 'approved') return false;
 
+      // Filter out products from removed seller profiles
+      const seller = this.sellerProfiles.get(p.sellerId);
+      if (seller?.isRemoved) return false;
+
       // Campus filter: 'all' shows all products nationwide
       if (filters?.campusId && filters.campusId !== 'all' && p.campusId !== filters.campusId && p.campusId !== 'all') {
         return false;
@@ -795,6 +803,26 @@ class Store {
     }
 
     const headers = await this.getAuthHeader();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const defaultDateStr = tomorrow.toISOString().split('T')[0];
+
+    const safeSellerConfigs: Record<string, any> = { ...(data.sellerConfigs || {}) };
+    for (const item of this.cart) {
+      const sId = item.product?.sellerId;
+      if (sId) {
+        if (!safeSellerConfigs[sId]) {
+          safeSellerConfigs[sId] = {
+            fulfillmentType: data.fulfillmentType || 'seller_delivers',
+            scheduledDate: defaultDateStr,
+            deliveryInstructions: data.deliveryInstructions || ''
+          };
+        } else if (!safeSellerConfigs[sId].scheduledDate) {
+          safeSellerConfigs[sId].scheduledDate = defaultDateStr;
+        }
+      }
+    }
+
     const res = await fetch('/api/checkout', {
       method: 'POST',
       headers: {
@@ -803,7 +831,7 @@ class Store {
       },
       body: JSON.stringify({
         items: this.cart,
-        sellerConfigs: data.sellerConfigs || {},
+        sellerConfigs: safeSellerConfigs,
         buyerInfo: {
           name: this.currentUser.name,
           phone: data.phone || this.currentUser.phone,
@@ -1860,7 +1888,7 @@ class Store {
       .reduce((sum, o) => sum + (o.platformCommission || 0), 0);
 
     const pendingEscrowAmount = this.orders
-      .filter((o) => o.paymentStatus === 'delivery_fee_paid' || o.paymentStatus === 'pending_inspection_pay' || o.paymentStatus === 'escrow_held')
+      .filter((o) => o.paymentStatus === 'delivery_fee_paid' || o.paymentStatus === 'pending_inspection_pay')
       .reduce((sum, o) => sum + (o.subtotal || o.totalAmount), 0);
 
     const totalOrders = this.orders.length;

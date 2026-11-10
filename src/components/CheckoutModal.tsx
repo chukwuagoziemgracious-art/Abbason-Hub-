@@ -56,6 +56,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return map;
   }, [cart]);
 
+  // Stable default date for scheduled deliveries (tomorrow)
+  const defaultDateStr = useMemo(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  }, []);
+
   // Per-seller checkout configuration state
   const [sellerConfigs, setSellerConfigs] = useState<Record<string, {
     fulfillmentType: 'seller_delivers' | 'buyer_pickup';
@@ -70,55 +77,66 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Track whether we already initialized configs for this open session
   const prevIsOpenRef = React.useRef(false);
 
-  // Initialize seller configs ONLY once when modal opens
+  // Initialize and synchronize seller configs whenever modal opens or vendors are present
   React.useEffect(() => {
-    if (isOpen && !prevIsOpenRef.current) {
-      setBuyerPhone(store.getCurrentUser().phone || '');
-      const initial: typeof sellerConfigs = {};
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const defaultDateStr = tomorrow.toISOString().split('T')[0];
+    if (!isOpen) {
+      prevIsOpenRef.current = false;
+      return;
+    }
+
+    setBuyerPhone(store.getCurrentUser().phone || '');
+
+    setSellerConfigs((prev) => {
+      let changed = false;
+      const next = { ...prev };
 
       vendorGroups.forEach((group, sId) => {
-        const allowsDelivery = group.items.every((it) => {
-          if (it.product.fulfillmentOptions && it.product.fulfillmentOptions.length > 0) {
-            return it.product.fulfillmentOptions.includes('delivery');
-          }
-          return it.product.deliveryOption === 'both' || it.product.deliveryOption === 'seller_delivers' || !it.product.deliveryOption;
-        });
+        if (!next[sId] || !next[sId].scheduledDate) {
+          changed = true;
+          const allowsDelivery = group.items.every((it) => {
+            if (it.product.fulfillmentOptions && it.product.fulfillmentOptions.length > 0) {
+              return it.product.fulfillmentOptions.includes('delivery');
+            }
+            return it.product.deliveryOption === 'both' || it.product.deliveryOption === 'seller_delivers' || !it.product.deliveryOption;
+          });
 
-        const allowsPickup = group.items.every((it) => {
-          if (it.product.fulfillmentOptions && it.product.fulfillmentOptions.length > 0) {
-            return it.product.fulfillmentOptions.includes('pickup');
-          }
-          return it.product.deliveryOption === 'both' || it.product.deliveryOption === 'buyer_pickup' || !it.product.deliveryOption;
-        });
+          const allowsPickup = group.items.every((it) => {
+            if (it.product.fulfillmentOptions && it.product.fulfillmentOptions.length > 0) {
+              return it.product.fulfillmentOptions.includes('pickup');
+            }
+            return it.product.deliveryOption === 'both' || it.product.deliveryOption === 'buyer_pickup' || !it.product.deliveryOption;
+          });
 
-        let initialFulfillment: 'seller_delivers' | 'buyer_pickup' = 'seller_delivers';
-        if (allowsDelivery && allowsPickup) {
-          initialFulfillment = deliveryConfig.fulfillmentType || 'seller_delivers';
-        } else if (allowsDelivery) {
-          initialFulfillment = 'seller_delivers';
-        } else {
-          initialFulfillment = 'buyer_pickup';
+          let initialFulfillment: 'seller_delivers' | 'buyer_pickup' = 'seller_delivers';
+          if (allowsDelivery && allowsPickup) {
+            initialFulfillment = deliveryConfig.fulfillmentType || 'seller_delivers';
+          } else if (allowsDelivery) {
+            initialFulfillment = 'seller_delivers';
+          } else {
+            initialFulfillment = 'buyer_pickup';
+          }
+
+          const pickupConfig = group.items.find(i => i.product.pickup)?.product.pickup;
+
+          next[sId] = {
+            fulfillmentType: next[sId]?.fulfillmentType || initialFulfillment,
+            meetingPointKind: next[sId]?.meetingPointKind || ((pickupConfig?.locationKind === 'custom') ? 'custom' : 'safe_checkpoint'),
+            checkpointLabel: next[sId]?.checkpointLabel || safePoints[0] || 'Campus Main Gate',
+            customLocation: next[sId]?.customLocation || pickupConfig?.locationLabel || deliveryConfig.deliveryInstructions || '',
+            scheduledDate: next[sId]?.scheduledDate || defaultDateStr,
+            timeSlot: next[sId]?.timeSlot || 'afternoon'
+          };
         }
-
-        const pickupConfig = group.items.find(i => i.product.pickup)?.product.pickup;
-
-        initial[sId] = {
-          fulfillmentType: initialFulfillment,
-          meetingPointKind: (pickupConfig?.locationKind === 'custom') ? 'custom' : 'safe_checkpoint',
-          checkpointLabel: safePoints[0] || 'Campus Main Gate',
-          customLocation: pickupConfig?.locationLabel || deliveryConfig.deliveryInstructions || '',
-          scheduledDate: defaultDateStr,
-          timeSlot: 'afternoon'
-        };
       });
-      setSellerConfigs(initial);
+
+      return changed ? next : prev;
+    });
+
+    if (!prevIsOpenRef.current) {
       setErrorMessage(null);
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen]);
+  }, [isOpen, vendorGroups, deliveryConfig.fulfillmentType, deliveryConfig.deliveryInstructions, safePoints, defaultDateStr]);
 
   if (!isOpen || cart.length === 0) return null;
 
@@ -165,9 +183,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     try {
       // Validate per-vendor fulfillment & meeting points
-      for (const [sId, conf] of Object.entries(sellerConfigs)) {
-        const group = vendorGroups.get(sId);
-        if (!group) continue;
+      for (const [sId, group] of vendorGroups.entries()) {
+        const conf = sellerConfigs[sId] || {
+          fulfillmentType: deliveryConfig.fulfillmentType || 'seller_delivers',
+          meetingPointKind: 'safe_checkpoint',
+          checkpointLabel: safePoints[0] || 'Campus Main Gate',
+          customLocation: '',
+          scheduledDate: defaultDateStr,
+          timeSlot: 'afternoon'
+        };
 
         if (conf.meetingPointKind === 'custom' && (!conf.customLocation || conf.customLocation.trim().length < 3)) {
           throw new Error(`Please specify a valid hostel/room location for ${group.sellerName || 'vendor'} (min 3 characters).`);
@@ -176,8 +200,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         // Validate pickup days if self pickup chosen
         if (conf.fulfillmentType === 'buyer_pickup') {
           const pickupConfig = group.items.find(i => i.product.pickup)?.product.pickup;
-          if (pickupConfig && pickupConfig.days && pickupConfig.days.length > 0 && conf.scheduledDate) {
-            const dateObj = new Date(conf.scheduledDate);
+          const targetDate = conf.scheduledDate || defaultDateStr;
+          if (pickupConfig && pickupConfig.days && pickupConfig.days.length > 0 && targetDate) {
+            const dateObj = new Date(targetDate);
             const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
             const chosenDay = dayNames[dateObj.getDay()];
             if (!pickupConfig.days.includes(chosenDay as any)) {
@@ -188,18 +213,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
       }
 
-      // Format payload for server
+      // Format payload for server - guarantee EVERY vendor group has a valid config and scheduledDate
       const formattedConfigs: Record<string, any> = {};
-      Object.entries(sellerConfigs).forEach(([sId, conf]) => {
+      vendorGroups.forEach((group, sId) => {
+        const conf = sellerConfigs[sId];
+        const sDate = (conf?.scheduledDate && conf.scheduledDate.trim().length >= 8)
+          ? conf.scheduledDate.trim()
+          : defaultDateStr;
+
         formattedConfigs[sId] = {
-          fulfillmentType: conf.fulfillmentType,
+          fulfillmentType: conf?.fulfillmentType || 'seller_delivers',
           meetingPoint: {
-            kind: conf.meetingPointKind,
-            label: conf.meetingPointKind === 'safe_checkpoint' ? conf.checkpointLabel : conf.customLocation.trim()
+            kind: conf?.meetingPointKind || 'safe_checkpoint',
+            label: conf?.meetingPointKind === 'custom'
+              ? (conf.customLocation?.trim() || group.sellerName)
+              : (conf?.checkpointLabel || safePoints[0] || 'Campus Main Gate')
           },
-          scheduledDate: conf.scheduledDate,
-          timeSlot: conf.timeSlot,
-          deliveryInstructions: conf.meetingPointKind === 'custom' ? conf.customLocation.trim() : conf.checkpointLabel
+          scheduledDate: sDate,
+          timeSlot: conf?.timeSlot || 'afternoon',
+          deliveryInstructions: conf?.meetingPointKind === 'custom'
+            ? (conf.customLocation?.trim() || group.sellerName)
+            : (conf?.checkpointLabel || safePoints[0] || 'Campus Main Gate')
         };
       });
 
@@ -292,11 +326,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <div className="space-y-4">
             {Array.from(vendorGroups.entries()).map(([sellerId, group], idx) => {
               const conf = sellerConfigs[sellerId] || {
-                fulfillmentType: deliveryConfig.fulfillmentType,
+                fulfillmentType: deliveryConfig.fulfillmentType || 'seller_delivers',
                 meetingPointKind: 'safe_checkpoint',
                 checkpointLabel: safePoints[0] || 'Campus Main Gate',
                 customLocation: '',
-                scheduledDate: '',
+                scheduledDate: defaultDateStr,
                 timeSlot: 'afternoon'
               };
 
@@ -346,7 +380,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           type="button"
                           onClick={() => setSellerConfigs(prev => ({
                             ...prev,
-                            [sellerId]: { ...prev[sellerId], fulfillmentType: 'seller_delivers' }
+                            [sellerId]: { ...(prev[sellerId] || conf), fulfillmentType: 'seller_delivers' }
                           }))}
                           className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
                             conf.fulfillmentType === 'seller_delivers'
@@ -374,7 +408,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           type="button"
                           onClick={() => setSellerConfigs(prev => ({
                             ...prev,
-                            [sellerId]: { ...prev[sellerId], fulfillmentType: 'buyer_pickup' }
+                            [sellerId]: { ...(prev[sellerId] || conf), fulfillmentType: 'buyer_pickup' }
                           }))}
                           className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
                             conf.fulfillmentType === 'buyer_pickup'
@@ -413,7 +447,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         type="button"
                         onClick={() => setSellerConfigs(prev => ({
                           ...prev,
-                          [sellerId]: { ...prev[sellerId], meetingPointKind: 'safe_checkpoint' }
+                          [sellerId]: { ...(prev[sellerId] || conf), meetingPointKind: 'safe_checkpoint' }
                         }))}
                         className={`px-2.5 py-1 rounded-lg text-[10px] font-medium border ${
                           conf.meetingPointKind === 'safe_checkpoint'
@@ -427,7 +461,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         type="button"
                         onClick={() => setSellerConfigs(prev => ({
                           ...prev,
-                          [sellerId]: { ...prev[sellerId], meetingPointKind: 'custom' }
+                          [sellerId]: { ...(prev[sellerId] || conf), meetingPointKind: 'custom' }
                         }))}
                         className={`px-2.5 py-1 rounded-lg text-[10px] font-medium border ${
                           conf.meetingPointKind === 'custom'
@@ -445,7 +479,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           value={conf.checkpointLabel}
                           onChange={(e) => setSellerConfigs(prev => ({
                             ...prev,
-                            [sellerId]: { ...prev[sellerId], checkpointLabel: e.target.value }
+                            [sellerId]: { ...(prev[sellerId] || conf), checkpointLabel: e.target.value }
                           }))}
                           className="w-full bg-[#020406] border border-white/[0.12] rounded-xl px-3 py-2 text-white appearance-none cursor-pointer focus:border-[#C8A96A] outline-none pr-8"
                         >
@@ -463,7 +497,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         value={conf.customLocation}
                         onChange={(e) => setSellerConfigs(prev => ({
                           ...prev,
-                          [sellerId]: { ...prev[sellerId], customLocation: e.target.value }
+                          [sellerId]: { ...(prev[sellerId] || conf), customLocation: e.target.value }
                         }))}
                         placeholder="e.g. Block C, Room 14, Silver Hostel (3-120 chars)"
                         maxLength={120}
@@ -480,11 +514,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       </label>
                       <input
                         type="date"
-                        value={conf.scheduledDate}
-                        onChange={(e) => setSellerConfigs(prev => ({
-                          ...prev,
-                          [sellerId]: { ...prev[sellerId], scheduledDate: e.target.value }
-                        }))}
+                        required
+                        min={new Date().toISOString().split('T')[0]}
+                        max={new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0]}
+                        value={conf.scheduledDate || defaultDateStr}
+                        onChange={(e) => {
+                          const val = e.target.value || defaultDateStr;
+                          setSellerConfigs(prev => ({
+                            ...prev,
+                            [sellerId]: { ...(prev[sellerId] || conf), scheduledDate: val }
+                          }));
+                        }}
                         className="w-full bg-[#020406] border border-white/[0.12] rounded-xl px-2.5 py-1.5 text-white text-[11px] outline-none focus:border-[#C8A96A]"
                       />
                     </div>
@@ -496,7 +536,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         value={conf.timeSlot}
                         onChange={(e) => setSellerConfigs(prev => ({
                           ...prev,
-                          [sellerId]: { ...prev[sellerId], timeSlot: e.target.value as any }
+                          [sellerId]: { ...(prev[sellerId] || conf), timeSlot: e.target.value as any }
                         }))}
                         className="w-full bg-[#020406] border border-white/[0.12] rounded-xl px-2.5 py-1.5 text-white text-[11px] outline-none focus:border-[#C8A96A] cursor-pointer"
                       >
