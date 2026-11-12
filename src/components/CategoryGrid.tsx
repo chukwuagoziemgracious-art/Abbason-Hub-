@@ -109,7 +109,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
             <button
               key={cat.id}
               onClick={() => onSelectCategory(isSelected ? 'all' : cat.slug)}
-              className={`group relative shrink-0 w-44 sm:w-52 h-60 sm:h-72 rounded-2xl sm:rounded-3xl overflow-hidden snap-start text-left cursor-pointer transition-all duration-300 active:scale-[0.98] ${
+              className={`group relative shrink-0 w-36 sm:w-52 h-48 sm:h-72 rounded-xl sm:rounded-3xl overflow-hidden snap-start text-left cursor-pointer transition-all duration-300 active:scale-[0.98] ${
                 isSelected
                   ? 'border-2 border-[#C8A96A] shadow-[0_12px_36px_rgba(200,169,106,0.35)] ring-2 ring-[#C8A96A]/40'
                   : 'border border-white/[0.12] hover:border-[#C8A96A]/60 shadow-[0_10px_30px_rgba(0,0,0,0.5)]'

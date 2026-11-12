@@ -34,7 +34,7 @@ export const MyOrdersModal: React.FC<MyOrdersModalProps> = ({
   onRateSeller,
 }) => {
   const currentUser = store.getCurrentUser();
-  const orders = store.getOrders(currentUser.id, 'student');
+  const orders = currentUser ? store.getOrders(currentUser.id, 'student') : [];
 
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
@@ -115,7 +115,7 @@ Need help? Contact: support@abbasonhub.com
                 My Purchases & Parcels
               </h3>
               <p className="text-[11px] text-[#8C9399]">
-                Logged in as: {currentUser.name}
+                {currentUser ? `Logged in as: ${currentUser.name}` : 'Browsing as Guest'}
               </p>
             </div>
           </div>
@@ -140,7 +140,13 @@ Need help? Contact: support@abbasonhub.com
 
         {/* Content */}
         <div className="overflow-y-auto p-4 sm:p-6 space-y-4">
-          {orders.length === 0 ? (
+          {!currentUser ? (
+            <div className="p-10 rounded-2xl bg-slate-900/50 border border-slate-800 text-center text-xs text-slate-400">
+              <Package className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+              <p className="text-white font-medium text-sm">Sign in to view your orders</p>
+              <p className="mt-1">Please sign in with your campus account to view orders and track active deliveries.</p>
+            </div>
+          ) : orders.length === 0 ? (
             <div className="p-10 rounded-2xl bg-slate-900/50 border border-slate-800 text-center text-xs text-slate-400">
               <Package className="w-10 h-10 text-slate-600 mx-auto mb-2" />
               <p className="text-white font-medium text-sm">No orders yet</p>

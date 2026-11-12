@@ -72,7 +72,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     scheduledDate: string;
     timeSlot: 'morning' | 'afternoon' | 'evening' | 'any';
   }>>({});
-  const [buyerPhone, setBuyerPhone] = useState(store.getCurrentUser().phone || '');
+  const [buyerPhone, setBuyerPhone] = useState(store.getCurrentUser()?.phone || '');
 
   // Track whether we already initialized configs for this open session
   const prevIsOpenRef = React.useRef(false);
@@ -84,7 +84,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
 
-    setBuyerPhone(store.getCurrentUser().phone || '');
+    setBuyerPhone(store.getCurrentUser()?.phone || '');
 
     setSellerConfigs((prev) => {
       let changed = false;

@@ -5,11 +5,10 @@ import {
   Store, 
   ShieldCheck, 
   MapPin, 
-  Lock, 
   Sparkles,
   LogOut,
   CheckCircle2,
-  RotateCcw
+  Phone
 } from 'lucide-react';
 import { store } from '../services/store';
 import { loginWithGoogle, logoutUser } from '../services/firebase';
@@ -17,29 +16,36 @@ import { loginWithGoogle, logoutUser } from '../services/firebase';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onOpenAdminLogin?: () => void;
   onOpenSellerVerification?: () => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ 
   isOpen, 
   onClose,
-  onOpenAdminLogin,
   onOpenSellerVerification
 }) => {
   const campuses = store.getCampuses().filter(c => c.id !== 'all');
   const activeCampus = store.getActiveCampus();
   const currentUser = store.getCurrentUser();
-  const isSellerVerified = store.canUserSell(currentUser.id);
+  const isSellerVerified = currentUser ? store.canUserSell(currentUser.id) : false;
   const isSignedIn = store.isSignedIn();
 
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const [selectedCampusId, setSelectedCampusId] = useState(
-    currentUser.campusId || (activeCampus.id === 'all' ? 'unizik' : activeCampus.id)
+    currentUser?.campusId || (activeCampus.id === 'all' ? 'unizik' : activeCampus.id)
   );
-  const [hostel, setHostel] = useState(currentUser.hostel || 'Campus Hostel / Area');
+  const [hostel, setHostel] = useState(currentUser?.hostel || 'Campus Hostel / Area');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
+
+  React.useEffect(() => {
+    if (currentUser) {
+      if (currentUser.campusId) setSelectedCampusId(currentUser.campusId);
+      if (currentUser.hostel) setHostel(currentUser.hostel);
+      if (currentUser.phone) setPhone(currentUser.phone);
+    }
+  }, [currentUser, isOpen]);
 
   if (!isOpen) return null;
 
@@ -49,7 +55,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const fbUser = await loginWithGoogle();
       if (fbUser && fbUser.email) {
-        await store.handleGoogleLoginSuccess(fbUser, selectedCampusId, hostel);
+        await store.handleGoogleLoginSuccess(fbUser, selectedCampusId, hostel, phone);
 
         if (fbUser.email.toLowerCase() === 'chukwuagoziemgracious@gmail.com') {
           setFeedback(`Welcome Super Admin, ${fbUser.displayName || 'Owner'}!`);
@@ -79,16 +85,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleSaveProfileDetails = () => {
+  const handleSaveProfileDetails = async () => {
     const campus = campuses.find((c) => c.id === selectedCampusId);
-    if (currentUser) {
-      currentUser.campusId = selectedCampusId;
-      if (campus) currentUser.campusName = campus.name;
-      currentUser.hostel = hostel;
-      store.setCurrentUser(currentUser);
-      setFeedback('Campus location preferences updated.');
-      setTimeout(() => setFeedback(null), 2000);
-    }
+    await store.updateUserProfile({
+      campusId: selectedCampusId,
+      campusName: campus?.name,
+      hostel,
+      phone
+    });
+    setFeedback('Profile details & phone number saved.');
+    setTimeout(() => setFeedback(null), 2500);
   };
 
   return (
@@ -129,28 +135,43 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         <div className="p-5 sm:p-6 space-y-5 text-xs">
-          {/* Active Profile Card */}
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#C8A96A]/20 border border-[#C8A96A]/50 flex items-center justify-center font-bold text-base text-[#C8A96A] shrink-0 font-serif">
-              {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-semibold text-white text-sm truncate">{currentUser.name}</span>
-                {isSellerVerified && (
-                  <span className="inline-flex items-center gap-0.5 text-emerald-400 text-[10px] bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                    <ShieldCheck className="w-3 h-3" />
-                    <span>Verified Vendor</span>
+          {/* Active Profile Card (Authenticated) or Guest Status Banner */}
+          {isSignedIn && currentUser ? (
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#C8A96A]/20 border border-[#C8A96A]/50 flex items-center justify-center font-bold text-base text-[#C8A96A] shrink-0 font-serif">
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-semibold text-white text-sm truncate">{currentUser.name}</span>
+                  {isSellerVerified && (
+                    <span className="inline-flex items-center gap-0.5 text-emerald-400 text-[10px] bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>Verified Vendor</span>
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5 truncate">{currentUser.email}</div>
+                <div className="text-[10px] text-[#8C9399] mt-1 flex items-center gap-1 font-light">
+                  <MapPin className="w-3 h-3 text-[#C8A96A]" />
+                  <span className="truncate">{currentUser.campusName || 'Select Campus'} · {currentUser.hostel || 'Hostel'}</span>
+                </div>
+                <div className="text-[10px] text-[#8C9399] mt-0.5 flex items-center gap-1 font-mono">
+                  <Phone className="w-3 h-3 text-[#C8A96A]" />
+                  <span className={currentUser.phone ? "text-slate-300" : "text-amber-400 font-sans"}>
+                    {currentUser.phone || 'No phone number set — please add below'}
                   </span>
-                )}
-              </div>
-              <div className="text-[11px] text-slate-400 mt-0.5 truncate">{currentUser.email}</div>
-              <div className="text-[10px] text-[#8C9399] mt-1 flex items-center gap-1 font-light">
-                <MapPin className="w-3 h-3 text-[#C8A96A]" />
-                <span className="truncate">{currentUser.campusName || 'Select Campus'} · {currentUser.hostel || 'Hostel'}</span>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] text-center space-y-1">
+              <div className="text-xs font-medium text-[#E9E6DF]">Browsing as Guest</div>
+              <p className="text-[11px] text-[#8C9399] font-light">
+                Sign in with your Google account to access campus orders, checkout, and verified seller features.
+              </p>
+            </div>
+          )}
 
           {!isSignedIn ? (
             <div className="space-y-4">
@@ -187,6 +208,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl px-3 py-2 text-white text-xs placeholder-slate-600 focus:outline-none"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center justify-between">
+                    <span>Mobile / WhatsApp Phone Number *</span>
+                    <span className="text-[9px] text-[#C8A96A] font-normal lowercase">Required for orders</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs font-mono">
+                      🇳🇬 +234
+                    </div>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="08012345678"
+                      className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl pl-16 pr-3 py-2 text-white text-xs placeholder-slate-600 focus:outline-none font-mono"
+                    />
+                  </div>
+                  <p className="text-[10px] text-[#8C9399] mt-1 font-light">
+                    Used by sellers and buyers to coordinate safe on-campus drop-offs & pickup.
+                  </p>
+                </div>
               </div>
 
               {/* Sole Sign-In Method: Continue with Google */}
@@ -207,7 +250,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Campus Preferences Edit */}
+              {/* Campus Preferences & Phone Edit */}
               <div className="space-y-3 p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
                 <div>
                   <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">
@@ -237,12 +280,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   />
                 </div>
 
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center justify-between">
+                    <span>Registered Phone / WhatsApp Number *</span>
+                    {!phone && <span className="text-amber-400 text-[9px] lowercase font-normal">Action needed</span>}
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs font-mono">
+                      🇳🇬 +234
+                    </div>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="08012345678"
+                      className="w-full bg-[#0B1120] border border-white/[0.08] focus:border-[#C8A96A] rounded-xl pl-16 pr-3 py-2 text-white text-xs placeholder-slate-600 focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
                 <button
                   type="button"
                   onClick={handleSaveProfileDetails}
                   className="w-full py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.09] text-[#C8A96A] border border-[#C8A96A]/30 text-xs font-medium cursor-pointer transition-colors"
                 >
-                  Save Location Preferences
+                  Save Profile Details & Phone
                 </button>
               </div>
 
@@ -272,65 +334,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </button>
             </div>
           )}
-
-          {/* Dev-only Persona Switcher */}
-          {import.meta.env.DEV && (
-            <div className="pt-2 border-t border-white/[0.06]">
-              <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-2">
-                Development Test Profiles:
-              </span>
-              <div className="space-y-1">
-                {store.getUsers().slice(0, 3).map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => {
-                      store.setCurrentUser(u);
-                      setFeedback(`Switched to ${u.name}`);
-                      setTimeout(() => onClose(), 800);
-                    }}
-                    className={`w-full p-2 rounded-xl border text-left flex items-center justify-between text-[11px] cursor-pointer ${
-                      currentUser.id === u.id
-                        ? 'bg-[#C8A96A]/20 border-[#C8A96A] text-white'
-                        : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:bg-white/[0.05]'
-                    }`}
-                  >
-                    <span>{u.name} ({u.role})</span>
-                    {currentUser.id === u.id && <span className="text-[#C8A96A] font-bold">Active</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Reset App to Brand New Campus State */}
-          <div className="pt-2 border-t border-white/[0.06] text-center space-y-2">
-            <button
-              type="button"
-              onClick={() => {
-                store.resetAppToNew();
-                setFeedback('App reset to clean brand new campus state!');
-                setTimeout(() => window.location.reload(), 600);
-              }}
-              className="text-[11px] text-[#8C9399] hover:text-white transition-colors flex items-center justify-center gap-1.5 mx-auto cursor-pointer py-1"
-            >
-              <RotateCcw className="w-3 h-3 text-[#C8A96A]" />
-              <span>Clear App & Reset to Fresh State</span>
-            </button>
-
-            {onOpenAdminLogin && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenAdminLogin();
-                }}
-                className="text-[10px] text-slate-500 hover:text-[#C8A96A] transition-colors flex items-center justify-center gap-1 mx-auto cursor-pointer"
-              >
-                <Lock className="w-2.5 h-2.5" />
-                <span>Abbason Platform Owner Console</span>
-              </button>
-            )}
-          </div>
         </div>
       </div>
     </div>

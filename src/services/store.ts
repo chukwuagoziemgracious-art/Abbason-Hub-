@@ -65,7 +65,7 @@ class Store {
   private campuses: Campus[] = [];
   private activeCampusId: string = 'all';
   private users: User[] = [];
-  private currentUser: User = INITIAL_USERS[0];
+  private currentUser: User | null = null;
   private products: Product[] = [];
   private orders: Order[] = [];
   private cart: CartItem[] = [];
@@ -85,26 +85,51 @@ class Store {
 
   private initFirestore() {
     testConnection().then(() => {
-      // Real-time Firestore synchronization for catalog
+      const fakeUserIds = new Set(['user_chiamaka', 'user_emeka', 'user_amara', 'user_tunde', 'user_david', 'user_kemi', 'user_admin', 'user_demo_1', 'user_demo_2']);
+
+      // Real-time Firestore synchronization for catalog - only real listings
       subscribeToProducts((remoteProducts) => {
         if (remoteProducts && remoteProducts.length > 0) {
+          const realProducts = remoteProducts.filter((p) => (
+            !fakeUserIds.has(p.sellerId) &&
+            !p.id.startsWith('prod_hp_') &&
+            !p.id.startsWith('prod_macbook_') &&
+            !p.id.startsWith('prod_rechargeable_') &&
+            !p.id.startsWith('prod_gas_') &&
+            !p.id.startsWith('prod_airpods_') &&
+            !p.id.startsWith('prod_calculus_') &&
+            !p.id.startsWith('prod_study_') &&
+            !p.id.startsWith('prod_bedsheet_') &&
+            !p.id.startsWith('prod_electric_') &&
+            !p.id.startsWith('prod_standing_') &&
+            !p.id.startsWith('prod_ox_') &&
+            !p.id.startsWith('prod_shoe_') &&
+            !p.id.startsWith('prod_laptop_') &&
+            !p.id.startsWith('prod_graphic_') &&
+            !p.id.startsWith('prod_snack_') &&
+            !p.id.startsWith('prod_campus_') &&
+            !p.id.startsWith('prod_scientific_') &&
+            !p.id.startsWith('prod_hot_') &&
+            !p.id.startsWith('prod_extension_') &&
+            !p.id.startsWith('prod_water_') &&
+            !p.id.startsWith('prod_powerbank_') &&
+            !p.id.startsWith('prod_stationery_')
+          ));
           const productMap = new Map<string, Product>();
-          this.products.forEach((p) => productMap.set(p.id, p));
-          remoteProducts.forEach((p) => productMap.set(p.id, p));
+          realProducts.forEach((p) => productMap.set(p.id, p));
           this.products = Array.from(productMap.values());
           this.save(true);
-        } else if (this.products.length > 0) {
-          this.products.forEach((p) => {
-            saveProductToFirestore(p).catch(() => {});
-          });
+        } else {
+          this.products = [];
+          this.save(true);
         }
       });
 
-      // Real-time public seller profiles (skipping removed vendors)
+      // Real-time public seller profiles (skipping removed vendors & fake personas)
       subscribeToSellerProfiles((profiles) => {
         this.sellerProfiles.clear();
         profiles.forEach((p) => {
-          if (!p.isRemoved) {
+          if (!p.isRemoved && !fakeUserIds.has(p.id) && !p.id.startsWith('user_')) {
             this.sellerProfiles.set(p.id, p);
           }
         });
@@ -144,8 +169,15 @@ class Store {
           this.save(true);
           this.resubscribeOrders();
         } else {
-          // Signed out
+          // Explicitly signed out or initial guest visit
+          this.currentUser = null;
+          this.adminAuthenticated = false;
+          try {
+            sessionStorage.removeItem(STORAGE_KEYS.ADMIN_AUTH);
+            localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+          } catch {}
           this.resubscribeOrders();
+          this.notify();
         }
       });
     }).catch((err) => {
@@ -158,7 +190,7 @@ class Store {
       this.orderUnsubscribe();
       this.orderUnsubscribe = undefined;
     }
-    if (!this.currentUser || !this.currentUser.id || this.currentUser.id.startsWith('user_demo_guest')) {
+    if (!this.currentUser || !this.currentUser.id || this.currentUser.id.startsWith('user_demo_guest') || this.currentUser.id.startsWith('user_')) {
       this.orders = [];
       this.save(true);
       return;
@@ -178,23 +210,25 @@ class Store {
 
   public resetAppToNew() {
     try {
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
+      const savedLogo = localStorage.getItem(STORAGE_KEYS.BRAND_LOGO);
+      for (let i = localStorage.length - 1; i >= 0; i--) {
         const k = localStorage.key(i);
-        if (k && (k.startsWith('abbason_') || k.startsWith('paystack_'))) {
-          keysToRemove.push(k);
+        if (k && (k.startsWith('abbason_') || k.startsWith('paystack_')) && k !== STORAGE_KEYS.BRAND_LOGO) {
+          localStorage.removeItem(k);
         }
       }
-      keysToRemove.forEach((k) => localStorage.removeItem(k));
-      localStorage.setItem('abbason_v5_cleaned', 'true');
+      if (savedLogo) {
+        localStorage.setItem(STORAGE_KEYS.BRAND_LOGO, savedLogo);
+      }
+      localStorage.setItem('abbason_v6_cleaned_real', 'true');
     } catch {
       // Ignore
     }
     this.campuses = CAMPUSES;
     this.activeCampusId = 'all';
-    this.users = INITIAL_USERS;
-    this.currentUser = INITIAL_USERS[0];
-    this.products = INITIAL_PRODUCTS;
+    this.users = [];
+    this.currentUser = null;
+    this.products = [];
     this.orders = [];
     this.cart = [];
     this.complaints = [];
@@ -207,17 +241,20 @@ class Store {
 
   private init() {
     try {
-      // One-time auto-wipe of stale legacy test state to ensure app is completely brand new
-      if (!localStorage.getItem('abbason_v5_cleaned')) {
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
+      // Auto-wipe stale legacy test state to ensure app is clean with zero fake listings or accounts
+      const CLEAN_V6_KEY = 'abbason_v6_real_clean_v1';
+      if (!localStorage.getItem(CLEAN_V6_KEY)) {
+        const savedLogo = localStorage.getItem(STORAGE_KEYS.BRAND_LOGO);
+        for (let i = localStorage.length - 1; i >= 0; i--) {
           const k = localStorage.key(i);
-          if (k && (k.startsWith('abbason_') || k.startsWith('paystack_'))) {
-            keysToRemove.push(k);
+          if (k && (k.startsWith('abbason_') || k.startsWith('paystack_')) && k !== STORAGE_KEYS.BRAND_LOGO) {
+            localStorage.removeItem(k);
           }
         }
-        keysToRemove.forEach((k) => localStorage.removeItem(k));
-        localStorage.setItem('abbason_v5_cleaned', 'true');
+        if (savedLogo) {
+          localStorage.setItem(STORAGE_KEYS.BRAND_LOGO, savedLogo);
+        }
+        localStorage.setItem(CLEAN_V6_KEY, 'true');
       }
 
       // Load campuses
@@ -228,21 +265,63 @@ class Store {
       const savedActiveCampus = localStorage.getItem(STORAGE_KEYS.ACTIVE_CAMPUS);
       this.activeCampusId = savedActiveCampus || 'all';
 
-      // Load users
+      // Load real users only
+      const fakeUserIds = new Set(['user_chiamaka', 'user_emeka', 'user_amara', 'user_tunde', 'user_david', 'user_kemi', 'user_admin', 'user_demo_1', 'user_demo_2']);
       const savedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
-      this.users = savedUsers ? JSON.parse(savedUsers) : INITIAL_USERS;
+      this.users = savedUsers 
+        ? JSON.parse(savedUsers).filter((u: User) => !fakeUserIds.has(u.id) && !u.id.startsWith('user_') && !u.email.endsWith('@abbasonhub.ng')) 
+        : [];
 
-      // Load current user
+      // Current user: default to null (Guest account) until someone explicitly signs in
       const savedCurrentUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-      this.currentUser = savedCurrentUser ? JSON.parse(savedCurrentUser) : this.users[0];
+      if (savedCurrentUser) {
+        try {
+          const parsed = JSON.parse(savedCurrentUser);
+          if (parsed && parsed.id && !fakeUserIds.has(parsed.id) && !parsed.id.startsWith('user_') && !parsed.email?.endsWith('@abbasonhub.ng')) {
+            this.currentUser = parsed;
+          } else {
+            this.currentUser = null;
+          }
+        } catch {
+          this.currentUser = null;
+        }
+      } else {
+        this.currentUser = null;
+      }
 
-      // Load products
+      // Load real products only (zero fake listings)
       const savedProducts = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-      this.products = savedProducts ? JSON.parse(savedProducts) : INITIAL_PRODUCTS;
+      this.products = savedProducts 
+        ? JSON.parse(savedProducts).filter((p: Product) => (
+            !fakeUserIds.has(p.sellerId) &&
+            !p.id.startsWith('prod_hp_') &&
+            !p.id.startsWith('prod_macbook_') &&
+            !p.id.startsWith('prod_rechargeable_') &&
+            !p.id.startsWith('prod_gas_') &&
+            !p.id.startsWith('prod_airpods_') &&
+            !p.id.startsWith('prod_calculus_') &&
+            !p.id.startsWith('prod_study_') &&
+            !p.id.startsWith('prod_bedsheet_') &&
+            !p.id.startsWith('prod_electric_') &&
+            !p.id.startsWith('prod_standing_') &&
+            !p.id.startsWith('prod_ox_') &&
+            !p.id.startsWith('prod_shoe_') &&
+            !p.id.startsWith('prod_laptop_') &&
+            !p.id.startsWith('prod_graphic_') &&
+            !p.id.startsWith('prod_snack_') &&
+            !p.id.startsWith('prod_campus_') &&
+            !p.id.startsWith('prod_scientific_') &&
+            !p.id.startsWith('prod_hot_') &&
+            !p.id.startsWith('prod_extension_') &&
+            !p.id.startsWith('prod_water_') &&
+            !p.id.startsWith('prod_powerbank_') &&
+            !p.id.startsWith('prod_stationery_')
+          )) 
+        : [];
 
       // Load orders
       const savedOrders = localStorage.getItem(STORAGE_KEYS.ORDERS);
-      this.orders = savedOrders ? JSON.parse(savedOrders) : INITIAL_ORDERS;
+      this.orders = savedOrders ? JSON.parse(savedOrders) : [];
 
       // Load cart
       const savedCart = localStorage.getItem(STORAGE_KEYS.CART);
@@ -254,24 +333,7 @@ class Store {
 
       // Load payouts
       const savedPayouts = localStorage.getItem(STORAGE_KEYS.PAYOUTS);
-      this.payouts = savedPayouts ? JSON.parse(savedPayouts) : [
-        {
-          id: 'payout_demo_1',
-          orderId: 'order_1001',
-          orderNumber: 'AB-82914',
-          sellerId: 'user_emeka',
-          sellerName: 'Emeka Campus Gadgets',
-          bankName: 'Access Bank Nigeria',
-          accountNumberMasked: '******4819',
-          amount: 38060,
-          commissionDeducted: 1140,
-          status: 'confirmed',
-          idempotencyKey: 'payout_order_1001_1728900000',
-          reference: 'SIM_TX_AB82914',
-          initiatedAt: '2026-10-14T06:30:00Z',
-          confirmedAt: '2026-10-14T07:45:00Z'
-        }
-      ];
+      this.payouts = savedPayouts ? JSON.parse(savedPayouts).filter((p: any) => p.id !== 'payout_demo_1') : [];
 
       // Load verifications
       const savedVerifications = localStorage.getItem(STORAGE_KEYS.VERIFICATIONS);
@@ -279,7 +341,7 @@ class Store {
 
       // Load reviews
       const savedReviews = localStorage.getItem(STORAGE_KEYS.REVIEWS);
-      this.reviews = savedReviews ? JSON.parse(savedReviews) : INITIAL_SELLER_REVIEWS;
+      this.reviews = savedReviews ? JSON.parse(savedReviews).filter((r: any) => !r.id.startsWith('rev_')) : [];
 
       // Load admin auth state
       const savedAdminAuth = sessionStorage.getItem(STORAGE_KEYS.ADMIN_AUTH);
@@ -291,15 +353,15 @@ class Store {
       // Fallback
       this.campuses = CAMPUSES;
       this.activeCampusId = 'all';
-      this.users = INITIAL_USERS;
-      this.currentUser = INITIAL_USERS[0];
-      this.products = INITIAL_PRODUCTS;
-      this.orders = INITIAL_ORDERS;
+      this.users = [];
+      this.currentUser = null;
+      this.products = [];
+      this.orders = [];
       this.cart = [];
       this.complaints = [];
       this.payouts = [];
       this.verifications = [];
-      this.reviews = INITIAL_SELLER_REVIEWS;
+      this.reviews = [];
       this.adminAuthenticated = false;
     }
   }
@@ -309,7 +371,11 @@ class Store {
       localStorage.setItem(STORAGE_KEYS.CAMPUSES, JSON.stringify(this.campuses));
       localStorage.setItem(STORAGE_KEYS.ACTIVE_CAMPUS, this.activeCampusId);
       localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(this.users));
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(this.currentUser));
+      if (this.currentUser) {
+        localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(this.currentUser));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      }
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(this.products));
       localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(this.orders));
       localStorage.setItem(STORAGE_KEYS.CART, JSON.stringify(this.cart));
@@ -335,7 +401,7 @@ class Store {
   }
 
   public isSignedIn(): boolean {
-    return !!(this.currentUser && this.currentUser.id && !this.currentUser.id.startsWith('user_demo_guest'));
+    return !!(this.currentUser && this.currentUser.id && !this.currentUser.id.startsWith('user_demo_guest') && !this.currentUser.id.startsWith('user_'));
   }
 
   public async logout(): Promise<void> {
@@ -343,16 +409,19 @@ class Store {
     this.adminAuthenticated = false;
     try {
       sessionStorage.removeItem(STORAGE_KEYS.ADMIN_AUTH);
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
     } catch {}
-    this.currentUser = INITIAL_USERS[0];
+    this.currentUser = null;
     this.resubscribeOrders();
     this.save();
+    this.notify();
   }
 
   public async handleGoogleLoginSuccess(
     fbUser: { uid: string; email: string | null; displayName: string | null; phoneNumber: string | null },
     campusId?: string,
-    hostel?: string
+    hostel?: string,
+    phone?: string
   ): Promise<User> {
     const isOwner = (fbUser.email || '').toLowerCase() === 'chukwuagoziemgracious@gmail.com';
     if (isOwner) {
@@ -361,6 +430,7 @@ class Store {
         sessionStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, 'true');
       } catch {}
     }
+    const cleanPhone = (phone || '').trim();
     const existing = await getUserFromFirestore(fbUser.uid);
     let resolvedUser: User;
     if (existing) {
@@ -368,7 +438,10 @@ class Store {
         ...existing,
         role: isOwner ? 'admin' : existing.role,
         campusId: campusId || existing.campusId,
-        hostel: hostel || existing.hostel
+        hostel: hostel || existing.hostel,
+        phone: cleanPhone || existing.phone || fbUser.phoneNumber || '',
+        isVerifiedSeller: isOwner ? true : existing.isVerifiedSeller,
+        sellerVerificationStatus: isOwner ? 'verified' : existing.sellerVerificationStatus
       };
       if (campusId) {
         const c = this.campuses.find((camp) => camp.id === campusId);
@@ -381,13 +454,13 @@ class Store {
         id: fbUser.uid,
         name: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'Campus Student'),
         email: fbUser.email || '',
-        phone: fbUser.phoneNumber || '',
+        phone: cleanPhone || fbUser.phoneNumber || '',
         role: isOwner ? 'admin' : 'student',
         campusId: selectedCampus.id,
         campusName: selectedCampus.name,
         hostel: hostel || 'Campus Area',
-        isVerifiedSeller: false,
-        sellerVerificationStatus: 'not_applied'
+        isVerifiedSeller: isOwner ? true : false,
+        sellerVerificationStatus: isOwner ? 'verified' : 'not_applied'
       };
       await saveUserToFirestore(resolvedUser);
     }
@@ -396,18 +469,48 @@ class Store {
     return resolvedUser;
   }
 
+  public async updateUserProfile(details: {
+    campusId?: string;
+    campusName?: string;
+    hostel?: string;
+    phone?: string;
+    name?: string;
+  }): Promise<User | null> {
+    if (!this.currentUser) return null;
+    if (details.campusId) {
+      this.currentUser.campusId = details.campusId;
+      const c = this.campuses.find((camp) => camp.id === details.campusId);
+      if (c) this.currentUser.campusName = c.name;
+    }
+    if (details.hostel !== undefined) this.currentUser.hostel = details.hostel;
+    if (details.phone !== undefined) this.currentUser.phone = details.phone.trim();
+    if (details.name !== undefined) this.currentUser.name = details.name;
+
+    const userInList = this.users.find((u) => u.id === this.currentUser!.id);
+    if (userInList) {
+      Object.assign(userInList, this.currentUser);
+    }
+    this.save();
+    this.notify();
+    saveUserToFirestore(this.currentUser).catch((err) => {
+      console.warn('Firestore user update notice:', err);
+    });
+    return this.currentUser;
+  }
+
   public getSellerProfile(sellerId: string): SellerProfile | undefined {
     return this.sellerProfiles.get(sellerId);
   }
 
   // --- Admin Access Gating (Zero-Trust Verified by Google OAuth) ---
   public isAdminAuthenticated(): boolean {
+    if (!this.currentUser || !this.currentUser.email) return false;
     const isOwnerEmail = this.currentUser.email.toLowerCase() === 'chukwuagoziemgracious@gmail.com';
     return isOwnerEmail && (this.adminAuthenticated || this.currentUser.role === 'admin');
   }
 
   public setAdminSession(authenticated: boolean, adminUser?: User): void {
-    if (this.currentUser.email.toLowerCase() !== 'chukwuagoziemgracious@gmail.com' && adminUser?.email.toLowerCase() !== 'chukwuagoziemgracious@gmail.com') {
+    if ((this.currentUser?.email?.toLowerCase() !== 'chukwuagoziemgracious@gmail.com') && adminUser?.email?.toLowerCase() !== 'chukwuagoziemgracious@gmail.com') {
       console.warn('Unauthorized attempt to elevate to admin session.');
       return;
     }
@@ -426,11 +529,8 @@ class Store {
   }
 
   public authenticateAdmin(email: string): boolean {
-    // Hardcoded passcodes ('abbason2026', 'admin123') completely eliminated.
-    // Strictly requires the verified owner email.
     if (email.trim().toLowerCase() === 'chukwuagoziemgracious@gmail.com') {
-      const adminUser = this.users.find((u) => u.email.toLowerCase() === 'chukwuagoziemgracious@gmail.com') ||
-        INITIAL_USERS.find((u) => u.role === 'admin');
+      const adminUser = this.users.find((u) => u.email.toLowerCase() === 'chukwuagoziemgracious@gmail.com');
       if (adminUser) {
         this.setAdminSession(true, adminUser);
         return true;
@@ -444,9 +544,8 @@ class Store {
     try {
       sessionStorage.removeItem(STORAGE_KEYS.ADMIN_AUTH);
     } catch {}
-    const studentUser = this.users.find((u) => u.role === 'student') || INITIAL_USERS[0];
-    this.currentUser = studentUser;
     this.save();
+    this.notify();
   }
 
   // --- Campus Methods ---
@@ -464,7 +563,7 @@ class Store {
   }
 
   // --- User & Auth Methods ---
-  public getCurrentUser(): User {
+  public getCurrentUser(): User | null {
     return this.currentUser;
   }
 
@@ -473,14 +572,19 @@ class Store {
   }
 
   public canUserSell(userId?: string): boolean {
-    const targetId = userId || this.currentUser.id;
-    const user = this.users.find((u) => u.id === targetId) || this.currentUser;
-    return !!user.isVerifiedSeller && user.sellerVerificationStatus === 'verified';
+    const targetId = userId || this.currentUser?.id;
+    if (!targetId) return false;
+    const user = this.users.find((u) => u.id === targetId) || (this.currentUser?.id === targetId ? this.currentUser : null);
+    if (!user) return false;
+    if (user.email?.toLowerCase() === 'chukwuagoziemgracious@gmail.com') return true;
+    return !!user.isVerifiedSeller || user.sellerVerificationStatus === 'verified';
   }
 
   public getSellerVerificationStatus(userId?: string): 'not_applied' | 'pending' | 'approved_pending_fee' | 'verified' | 'rejected' | 'removed' {
-    const targetId = userId || this.currentUser.id;
-    const user = this.users.find((u) => u.id === targetId) || this.currentUser;
+    const targetId = userId || this.currentUser?.id;
+    if (!targetId) return 'not_applied';
+    const user = this.users.find((u) => u.id === targetId) || (this.currentUser?.id === targetId ? this.currentUser : null);
+    if (!user) return 'not_applied';
     if (user.sellerVerificationStatus) return user.sellerVerificationStatus;
     if (user.isVerifiedSeller) return 'verified';
     const pendingReq = this.verifications.find((v) => v.userId === targetId && v.status === 'pending');
@@ -633,6 +737,9 @@ class Store {
     brand?: string;
     deliverySchedule?: DeliverySchedule;
   }): Product {
+    if (!this.currentUser) {
+      throw new Error('Please sign in with your student Google account before submitting listings.');
+    }
     // Check if seller is verified
     if (!this.canUserSell(this.currentUser.id)) {
       throw new Error('Only verified sellers can submit listings. Please complete student seller verification.');
@@ -756,7 +863,7 @@ class Store {
         if (token) return { Authorization: `Bearer ${token}` };
       }
     } catch {}
-    return { Authorization: `Bearer ${this.currentUser.id || 'demo_user_1'}` };
+    return { Authorization: `Bearer ${this.currentUser?.id || 'guest_user'}` };
   }
 
   public async initializePayment(payload: {
@@ -800,6 +907,9 @@ class Store {
   }): Promise<Order[]> {
     if (this.cart.length === 0) {
       throw new Error('Basket is empty');
+    }
+    if (!this.currentUser) {
+      throw new Error('Please sign in with your Google account before completing checkout.');
     }
 
     const headers = await this.getAuthHeader();
@@ -894,7 +1004,7 @@ class Store {
       }
       const user = this.users.find(u => u.id === sellerId);
       if (user) user.subaccountVerified = true;
-      if (this.currentUser.id === sellerId) this.currentUser.subaccountVerified = true;
+      if (this.currentUser && this.currentUser.id === sellerId) this.currentUser.subaccountVerified = true;
       this.save();
       return { success: true };
     } catch (err: any) {
@@ -1467,8 +1577,8 @@ class Store {
       sellerId: data.sellerId,
       sellerName,
       orderId: data.orderId,
-      buyerId: this.currentUser.id,
-      buyerName: this.currentUser.name,
+      buyerId: this.currentUser?.id || 'verified_buyer',
+      buyerName: this.currentUser?.name || 'Student Buyer',
       campusName: campus.shortName,
       rating: Math.max(1, Math.min(5, data.rating)),
       comment: data.comment.trim(),
@@ -1584,7 +1694,7 @@ class Store {
   }
 
   // --- Seller Verification Methods ---
-  public submitSellerVerification(data: {
+  public async submitSellerVerification(data: {
     matricNumber: string;
     facultyDepartment: string;
     level: string;
@@ -1596,14 +1706,24 @@ class Store {
     accountNumber: string;
     accountName: string;
     categoriesToSell?: string;
-  }): SellerVerificationRequest {
+    phone?: string;
+  }): Promise<SellerVerificationRequest> {
+    if (!this.currentUser) {
+      throw new Error('Please sign in with your student Google account before applying for seller verification.');
+    }
     const campus = this.getActiveCampus();
+    const phoneToUse = data.phone?.trim() || this.currentUser.phone || '';
+    if (phoneToUse && phoneToUse !== this.currentUser.phone) {
+      this.currentUser.phone = phoneToUse;
+    }
+
+    const isOwner = this.currentUser.email?.toLowerCase() === 'chukwuagoziemgracious@gmail.com';
     const req: SellerVerificationRequest = {
       id: `verif_${Date.now()}`,
       userId: this.currentUser.id,
       userName: this.currentUser.name,
       userEmail: this.currentUser.email,
-      phone: this.currentUser.phone,
+      phone: phoneToUse,
       campusId: campus.id === 'all' ? (this.currentUser.campusId || 'unizik') : campus.id,
       campusName: campus.id === 'all' ? (this.currentUser.campusName || 'Nnamdi Azikiwe University (UNIZIK)') : campus.name,
       matricNumber: data.matricNumber,
@@ -1617,29 +1737,96 @@ class Store {
       accountNumber: data.accountNumber,
       accountName: data.accountName,
       categoriesToSell: data.categoriesToSell,
-      status: 'pending',
+      status: isOwner ? 'approved' : 'pending',
       submittedAt: new Date().toISOString()
     };
 
-    this.verifications.unshift(req);
-
-    // Update current user status
-    this.currentUser.sellerVerificationStatus = 'pending';
+    // If owner, grant instant verified status
+    if (isOwner) {
+      this.currentUser.isVerifiedSeller = true;
+      this.currentUser.sellerVerificationStatus = 'verified';
+      this.currentUser.role = 'seller';
+    } else {
+      this.currentUser.sellerVerificationStatus = 'pending';
+    }
     this.currentUser.matricNumber = data.matricNumber;
     this.currentUser.facultyDepartment = data.facultyDepartment;
     this.currentUser.level = data.level;
 
-    const userInList = this.users.find((u) => u.id === this.currentUser.id);
+    const existingIdx = this.verifications.findIndex((v) => v.userId === this.currentUser!.id);
+    if (existingIdx >= 0) {
+      this.verifications[existingIdx] = req;
+    } else {
+      this.verifications.unshift(req);
+    }
+
+    const userInList = this.users.find((u) => u.id === this.currentUser!.id);
     if (userInList) {
-      userInList.sellerVerificationStatus = 'pending';
-      userInList.matricNumber = data.matricNumber;
+      Object.assign(userInList, this.currentUser);
     }
 
     this.save();
+    this.notify();
+
+    // Sync to server endpoint so memory and admin queues are instantly updated
+    try {
+      const headers = await this.getAuthHeader();
+      await fetch('/api/sellers/apply-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({
+          ...req,
+          user: this.currentUser
+        })
+      });
+    } catch (apiErr) {
+      console.warn('[Store] Sync to /api/sellers/apply-verification notice:', apiErr);
+    }
+
     saveVerificationToFirestore(req).catch((err) => {
       console.warn('Firestore verification sync warning:', err);
     });
+    saveUserToFirestore(this.currentUser).catch((err) => {
+      console.warn('Firestore user sync warning:', err);
+    });
+
     return req;
+  }
+
+  public async fastVerifySeller(userId: string): Promise<boolean> {
+    const user = this.users.find((u) => u.id === userId) || (this.currentUser?.id === userId ? this.currentUser : null);
+    if (user) {
+      user.isVerifiedSeller = true;
+      user.sellerVerificationStatus = 'verified';
+      user.role = 'seller';
+    }
+    if (this.currentUser && this.currentUser.id === userId) {
+      this.currentUser.isVerifiedSeller = true;
+      this.currentUser.sellerVerificationStatus = 'verified';
+      this.currentUser.role = 'seller';
+    }
+    const verif = this.verifications.find((v) => v.userId === userId);
+    if (verif) {
+      verif.status = 'approved';
+    }
+    this.save();
+    this.notify();
+
+    try {
+      const headers = await this.getAuthHeader();
+      await fetch(`/api/admin/sellers/${userId}/fast-verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ userId })
+      });
+    } catch (err) {
+      console.warn('Fast verify API notice:', err);
+    }
+
+    if (user) {
+      saveUserToFirestore(user).catch(() => {});
+    }
+    return true;
   }
 
   public getSellerVerificationRequests(): SellerVerificationRequest[] {
@@ -1697,13 +1884,14 @@ class Store {
         user.role = 'seller';
         user.subaccountCode = data.subaccountCode;
       }
-      if (this.currentUser.id === userId) {
+      if (this.currentUser && this.currentUser.id === userId) {
         this.currentUser.sellerVerificationStatus = 'approved_pending_fee';
         this.currentUser.role = 'seller';
         this.currentUser.subaccountCode = data.subaccountCode;
       }
 
       this.save();
+      this.notify();
       return { success: true, message: data.message };
     } catch (err: any) {
       console.error('Approve seller API exception:', err);
@@ -1736,12 +1924,13 @@ class Store {
     const user = this.users.find((u) => u.id === (userId || req?.userId));
     if (user) {
       user.sellerVerificationStatus = 'rejected';
-      if (this.currentUser.id === user.id) {
+      if (this.currentUser && this.currentUser.id === user.id) {
         this.currentUser.sellerVerificationStatus = 'rejected';
       }
     }
 
     this.save();
+    this.notify();
     return true;
   }
 
@@ -1846,7 +2035,7 @@ class Store {
       accountName: bankDetails.accountName || user.name
     };
 
-    if (this.currentUser.id === userId) {
+    if (this.currentUser && this.currentUser.id === userId) {
       this.currentUser = { ...this.currentUser, bankDetails: user.bankDetails };
     }
 
@@ -1856,11 +2045,11 @@ class Store {
   }
 
   // --- Brand Logo Image Storage ---
-  public getBrandLogoImage(): string | null {
+  public getBrandLogoImage(): string {
     try {
-      return localStorage.getItem(STORAGE_KEYS.BRAND_LOGO);
+      return localStorage.getItem(STORAGE_KEYS.BRAND_LOGO) || '/logo.png';
     } catch {
-      return null;
+      return '/logo.png';
     }
   }
 
@@ -1908,8 +2097,14 @@ class Store {
   }
 
   public resetDemoData() {
+    const savedLogo = this.getBrandLogoImage();
     localStorage.clear();
     sessionStorage.clear();
+    if (savedLogo) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.BRAND_LOGO, savedLogo);
+      } catch {}
+    }
     this.init();
     this.notify();
   }

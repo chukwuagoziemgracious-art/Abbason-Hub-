@@ -51,7 +51,7 @@ export const NewListingModal: React.FC<NewListingModalProps> = ({
   const categories = store.getCategories();
   const activeCampus = store.getActiveCampus();
   const currentUser = store.getCurrentUser();
-  const isVerifiedSeller = store.canUserSell(currentUser.id);
+  const isVerifiedSeller = currentUser ? store.canUserSell(currentUser.id) : false;
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -82,8 +82,8 @@ export const NewListingModal: React.FC<NewListingModalProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
 
   // Seller Phone Check
-  const [sellerPhoneSaved, setSellerPhoneSaved] = useState<boolean>(!!currentUser.phone);
-  const [sellerPhoneInput, setSellerPhoneInput] = useState(currentUser.phone || '');
+  const [sellerPhoneSaved, setSellerPhoneSaved] = useState<boolean>(!!currentUser?.phone);
+  const [sellerPhoneInput, setSellerPhoneInput] = useState(currentUser?.phone || '');
   const [savingPhone, setSavingPhone] = useState(false);
   const [phoneMessage, setPhoneMessage] = useState<string | null>(null);
 
@@ -92,14 +92,14 @@ export const NewListingModal: React.FC<NewListingModalProps> = ({
       store.fetchSellerPhoneStatus().then((res) => {
         if (res.hasPhone) {
           setSellerPhoneSaved(true);
-        } else if (currentUser.phone) {
+        } else if (currentUser?.phone) {
           setSellerPhoneSaved(true);
         } else {
           setSellerPhoneSaved(false);
         }
       });
     }
-  }, [isOpen, currentUser.phone]);
+  }, [isOpen, currentUser?.phone]);
 
   const handleSavePhone = async (e: React.FormEvent) => {
     e.preventDefault();

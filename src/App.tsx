@@ -10,7 +10,6 @@ import { OrderReceiptModal } from './components/OrderReceiptModal';
 import { SellerDashboard } from './components/SellerDashboard';
 import { NewListingModal } from './components/NewListingModal';
 import { AdminDashboard } from './components/AdminDashboard';
-import { AdminLoginModal } from './components/AdminLoginModal';
 import { SellerVerificationModal } from './components/SellerVerificationModal';
 import { RateSellerModal } from './components/RateSellerModal';
 import { WhatsAppContactModal } from './components/WhatsAppContactModal';
@@ -57,7 +56,6 @@ export default function App() {
   const [sellerVerificationOpen, setSellerVerificationOpen] = useState(false);
   const [newListingOpen, setNewListingOpen] = useState(false);
   const [adminDashboardOpen, setAdminDashboardOpen] = useState(false);
-  const [adminLoginOpen, setAdminLoginOpen] = useState(false);
   const [rateSellerOrder, setRateSellerOrder] = useState<Order | null>(null);
   const [whatsAppModalOpen, setWhatsAppModalOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
@@ -143,7 +141,7 @@ export default function App() {
   const currentUser = store.getCurrentUser();
   const activeCampus = store.getActiveCampus();
   const approvedProducts = store.getApprovedProducts();
-  const isVerifiedSeller = store.canUserSell(currentUser.id);
+  const isVerifiedSeller = currentUser ? store.canUserSell(currentUser.id) : false;
   const isAdmin = store.isAdminAuthenticated();
 
   const handleAddToCart = (e: React.MouseEvent, product: Product) => {
@@ -160,6 +158,12 @@ export default function App() {
     fulfillmentType: 'seller_delivers' | 'buyer_pickup';
     deliveryInstructions: string;
   }) => {
+    if (!store.isSignedIn()) {
+      setCartOpen(false);
+      setAuthOpen(true);
+      showToast('Please sign in with your Google account to checkout.');
+      return;
+    }
     setDeliveryConfig(config);
     setCartOpen(false);
     setCheckoutOpen(true);
@@ -178,6 +182,11 @@ export default function App() {
   };
 
   const handleOpenSellerFlow = () => {
+    if (!store.isSignedIn()) {
+      setAuthOpen(true);
+      showToast('Please sign in with Google to access seller features.');
+      return;
+    }
     if (isVerifiedSeller) {
       setSellerDashboardOpen(true);
     } else {
@@ -188,8 +197,6 @@ export default function App() {
   const handleOpenAdminPortal = () => {
     if (store.isAdminAuthenticated()) {
       setAdminDashboardOpen(true);
-    } else {
-      setAdminLoginOpen(true);
     }
   };
 
@@ -200,7 +207,12 @@ export default function App() {
     } else if (screen === 'search') {
       handleScrollToCatalog();
     } else if (screen === 'orders') {
-      setMyOrdersOpen(true);
+      if (!store.isSignedIn()) {
+        setAuthOpen(true);
+        showToast('Please sign in to view your orders.');
+      } else {
+        setMyOrdersOpen(true);
+      }
     } else if (screen === 'account') {
       setAuthOpen(true);
     } else if (screen === 'admin') {
@@ -210,7 +222,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-transparent text-[#E9E6DF] flex flex-col pb-16 sm:pb-0 relative">
-      {/* Living black-water background with Nigerian flag subsurface reflection */}
+      {/* Dynamic black space background with moving small Nigeria flags */}
       <WaterBackground />
 
       {/* Toast Notification - Luxury Edition */}
@@ -235,7 +247,7 @@ export default function App() {
       )}
 
       {/* Account Suspended Notice Banner (Rule P4) */}
-      {(((banStatus?.bannedUntilMs ?? 0) > Date.now()) || (currentUser.suspendedUntilMs && currentUser.suspendedUntilMs > Date.now())) && (
+      {(((banStatus?.bannedUntilMs ?? 0) > Date.now()) || (currentUser?.suspendedUntilMs && currentUser.suspendedUntilMs > Date.now())) && (
         <div className="w-full bg-rose-950/90 border-b border-rose-500/50 py-2 px-4 text-center text-xs text-rose-200 flex items-center justify-center gap-2 relative z-30">
           <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
           <span>
@@ -336,26 +348,30 @@ export default function App() {
             </button>
             <span className="hidden sm:inline text-white/[0.15]">·</span>
             <span>Payment: <strong className="text-[#C8A96A] font-medium">Paystack</strong> (Inspect & Pay on Delivery)</span>
-            <span className="hidden sm:inline text-white/[0.15]">·</span>
-            <button
-              onClick={handleOpenAdminPortal}
-              className="text-[10px] text-[#8C9399] hover:text-[#C8A96A] transition-colors inline-flex items-center gap-1 cursor-pointer tracking-wider uppercase"
-            >
-              <Lock className="w-2.5 h-2.5 text-[#C8A96A]" />
-              <span>Owner & Admin</span>
-            </button>
+            {isAdmin && (
+              <>
+                <span className="hidden sm:inline text-white/[0.15]">·</span>
+                <button
+                  onClick={handleOpenAdminPortal}
+                  className="text-[10px] text-[#8C9399] hover:text-[#C8A96A] transition-colors inline-flex items-center gap-1 cursor-pointer tracking-wider uppercase"
+                >
+                  <Lock className="w-2.5 h-2.5 text-[#C8A96A]" />
+                  <span>Admin Hub</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </footer>
 
       {/* Floating WhatsApp Quick Action Button - Subtle Luxury Pill */}
-      <div className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40">
+      <div className="fixed bottom-16 sm:bottom-6 right-3 sm:right-6 z-40">
         <button
           onClick={() => setWhatsAppModalOpen(true)}
-          className="group flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-[#020406]/90 hover:bg-[#25D366] text-[#E9E6DF] hover:text-[#020406] font-medium text-xs shadow-2xl backdrop-blur-md transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border border-[#25D366]/40 hover:border-[#25D366]"
+          className="group flex items-center justify-center gap-1.5 p-2 sm:px-3 sm:py-2 rounded-full bg-[#020406]/90 hover:bg-[#25D366] text-[#E9E6DF] hover:text-[#020406] font-medium text-xs shadow-2xl backdrop-blur-md transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border border-[#25D366]/40 hover:border-[#25D366]"
           title="Reach us on WhatsApp"
         >
-          <svg className="w-4 h-4 fill-[#25D366] group-hover:fill-[#020406] transition-colors" viewBox="0 0 24 24">
+          <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-[#25D366] group-hover:fill-[#020406] transition-colors" viewBox="0 0 24 24">
             <path d="M12.031 2C6.496 2 2 6.494 2 12.029c0 1.768.461 3.493 1.336 5.013L2 22l5.127-1.344a9.98 9.98 0 0 0 4.904 1.282h.005c5.532 0 10.028-4.494 10.028-10.029A10.01 10.01 0 0 0 12.031 2zm5.871 14.167c-.244.686-1.42 1.31-1.956 1.378-.49.062-1.127.088-3.642-.952-3.219-1.331-5.289-4.577-5.45-4.792-.158-.215-1.306-1.737-1.306-3.314 0-1.577.828-2.353 1.12-2.67.294-.318.641-.397.855-.397.215 0 .43.003.619.012.2.01.468-.076.732.558.27.65.922 2.25.998 2.413.078.163.13.353.023.568-.108.215-.162.35-.323.543-.162.193-.342.431-.489.578-.162.163-.331.341-.142.666.19.324.843 1.391 1.808 2.252 1.243 1.108 2.292 1.452 2.617 1.614.324.162.513.136.702-.081.189-.217.81-.945 1.026-1.27.216-.324.432-.27.728-.162.296.108 1.889.89 2.213 1.052.324.162.54.243.621.378.08.135.08.784-.164 1.47z" />
           </svg>
           <span className="hidden sm:inline font-light tracking-wider uppercase text-[10px]">WhatsApp Us</span>
@@ -439,16 +455,7 @@ export default function App() {
         onClose={() => setAdminDashboardOpen(false)}
       />
 
-      {/* 9. Admin Passcode Login Modal */}
-      <AdminLoginModal
-        isOpen={adminLoginOpen}
-        onClose={() => setAdminLoginOpen(false)}
-        onSuccess={() => {
-          setAdminDashboardOpen(true);
-        }}
-      />
-
-      {/* 10. Rate Seller Modal */}
+      {/* 9. Rate Seller Modal */}
       <RateSellerModal
         order={rateSellerOrder}
         isOpen={!!rateSellerOrder}
@@ -458,17 +465,16 @@ export default function App() {
         }}
       />
 
-      {/* 11. WhatsApp Contact Modal */}
+      {/* 10. WhatsApp Contact Modal */}
       <WhatsAppContactModal
         isOpen={whatsAppModalOpen}
         onClose={() => setWhatsAppModalOpen(false)}
       />
 
-      {/* 12. Student Account & Switcher */}
+      {/* 11. Student Account & Switcher */}
       <AuthModal
         isOpen={authOpen}
         onClose={() => setAuthOpen(false)}
-        onOpenAdminLogin={() => setAdminLoginOpen(true)}
         onOpenSellerVerification={() => setSellerVerificationOpen(true)}
       />
 

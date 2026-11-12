@@ -36,7 +36,7 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
 
   const [fulfillmentType, setFulfillmentType] = useState<'seller_delivers' | 'buyer_pickup'>('seller_delivers');
   const [deliveryInstructions, setDeliveryInstructions] = useState(
-    currentUser.hostel ? `${currentUser.hostel}, Room 12` : (activeCampus.safeMeetupPoints[0] || 'Campus Student Hostel Block')
+    currentUser?.hostel ? `${currentUser.hostel}, Room 12` : (activeCampus.safeMeetupPoints[0] || 'Campus Student Hostel Block')
   );
 
   if (!isOpen) return null;

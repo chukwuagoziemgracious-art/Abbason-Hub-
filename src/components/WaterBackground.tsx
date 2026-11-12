@@ -1,5 +1,32 @@
 import React, { useEffect, useRef } from 'react';
 
+interface Star {
+  x: number;
+  y: number;
+  size: number;
+  alpha: number;
+  baseAlpha: number;
+  twinkleSpeed: number;
+  color: string;
+}
+
+interface MiniFlag {
+  x: number;
+  y: number;
+  z: number; // 0.3 (far) to 1.1 (close)
+  baseW: number;
+  baseH: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  vRot: number;
+  wavePhase: number;
+  waveSpeed: number;
+  waveAmp: number;
+  floatOffset: number;
+  floatSpeed: number;
+}
+
 export const WaterBackground: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -7,156 +34,271 @@ export const WaterBackground: React.FC = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
 
     let animId: number;
-    let w = 0;
-    let h = 0;
-    let t = 0;
-    let mx = 0.5;
-    let my = 0.5;
-    let targetMx = 0.5;
-    let targetMy = 0.5;
-    let rippleStrength = 1.0;
+    let width = 0;
+    let height = 0;
+    let dpr = 1;
 
-    const resize = () => {
-      // 1/3 viewport resolution provides fluid 60fps performance on mobile and desktop
-      w = canvas.width = Math.max(1, Math.floor(window.innerWidth / 3));
-      h = canvas.height = Math.max(1, Math.floor(window.innerHeight / 3));
+    // Pointer influence
+    let mouseX = -9999;
+    let mouseY = -9999;
+    let targetMouseX = -9999;
+    let targetMouseY = -9999;
+
+    const FLAG_COUNT = window.innerWidth < 640 ? 28 : 48;
+    const STAR_COUNT = window.innerWidth < 640 ? 60 : 120;
+
+    let stars: Star[] = [];
+    let flags: MiniFlag[] = [];
+
+    const initEntities = () => {
+      // Starfield in black space
+      stars = Array.from({ length: STAR_COUNT }, () => {
+        const baseAlpha = Math.random() * 0.6 + 0.2;
+        const colorPalette = ['#FFFFFF', '#E9E6DF', '#C8A96A', '#6EE7B7', '#A7F3D0'];
+        return {
+          x: Math.random() * width,
+          y: Math.random() * height,
+          size: Math.random() * 1.5 + 0.5,
+          alpha: baseAlpha,
+          baseAlpha,
+          twinkleSpeed: Math.random() * 0.02 + 0.005,
+          color: colorPalette[Math.floor(Math.random() * colorPalette.length)]
+        };
+      });
+
+      // Small Nigeria flags drifting through black space
+      flags = Array.from({ length: FLAG_COUNT }, () => {
+        const z = Math.random() * 0.75 + 0.35; // Depth factor
+        const baseW = (Math.random() * 14 + 22) * z; // 10px to 38px width
+        const baseH = baseW * 0.58; // Standard ~1:1.72 flag aspect ratio
+        return {
+          x: Math.random() * width,
+          y: Math.random() * height,
+          z,
+          baseW,
+          baseH,
+          vx: (Math.random() * 0.35 + 0.15) * (Math.random() > 0.45 ? 1 : -1) * (0.5 + z * 0.6),
+          vy: (Math.random() * 0.3 + 0.1) * (Math.random() > 0.5 ? 1 : -1) * (0.5 + z * 0.6),
+          rot: (Math.random() - 0.5) * 0.6,
+          vRot: (Math.random() - 0.5) * 0.004,
+          wavePhase: Math.random() * Math.PI * 2,
+          waveSpeed: Math.random() * 0.04 + 0.025,
+          waveAmp: Math.random() * 2.2 + 1.2,
+          floatOffset: Math.random() * Math.PI * 2,
+          floatSpeed: Math.random() * 0.02 + 0.01
+        };
+      });
     };
 
-    window.addEventListener('resize', resize, { passive: true });
-    resize();
-
-    const updatePointer = (clientX: number, clientY: number, boost: boolean = false) => {
-      targetMx = clientX / window.innerWidth;
-      targetMy = clientY / window.innerHeight;
-      if (boost) {
-        rippleStrength = 2.2;
-      }
+    const handleResize = () => {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      ctx.scale(dpr, dpr);
+      initEntities();
     };
+
+    window.addEventListener('resize', handleResize, { passive: true });
+    handleResize();
 
     const handlePointerMove = (e: PointerEvent) => {
-      updatePointer(e.clientX, e.clientY);
+      targetMouseX = e.clientX;
+      targetMouseY = e.clientY;
     };
 
-    const handlePointerDown = (e: PointerEvent) => {
-      updatePointer(e.clientX, e.clientY, true);
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
-        updatePointer(e.touches[0].clientX, e.touches[0].clientY);
-      }
+    const handlePointerLeave = () => {
+      targetMouseX = -9999;
+      targetMouseY = -9999;
     };
 
     window.addEventListener('pointermove', handlePointerMove, { passive: true });
-    window.addEventListener('pointerdown', handlePointerDown, { passive: true });
-    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('pointerleave', handlePointerLeave, { passive: true });
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const sm = (a: number, b: number, x: number) => {
-      const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
-      return k * k * (3 - 2 * k);
-    };
+    let time = 0;
 
-    const frame = () => {
-      // Smooth pointer interpolation
-      mx += (targetMx - mx) * 0.12;
-      my += (targetMy - my) * 0.12;
-      if (rippleStrength > 1.0) {
-        rippleStrength = Math.max(1.0, rippleStrength - 0.02);
+    // Draw single animated small Nigeria flag (Green - White - Green)
+    const drawMiniFlag = (f: MiniFlag) => {
+      const w = f.baseW;
+      const h = f.baseH;
+      const stripeW = w / 3;
+
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.rotate(f.rot);
+
+      // Deep space atmospheric fade by depth
+      const alpha = Math.min(0.95, Math.max(0.25, f.z * 0.85));
+      ctx.globalAlpha = alpha;
+
+      // Soft ambient glow around flag in dark space
+      ctx.shadowColor = 'rgba(0, 135, 81, 0.45)';
+      ctx.shadowBlur = Math.round(6 * f.z);
+
+      const segments = 10;
+      const segW = w / segments;
+
+      // Wave calculation function
+      const getWaveY = (segX: number) => {
+        return Math.sin(f.wavePhase + (segX / w) * Math.PI * 2) * f.waveAmp;
+      };
+
+      // Draw the three Nigerian vertical stripes with fluttering wave distortion
+      // 1. Left Stripe: Emerald Green (#008751)
+      // 2. Middle Stripe: Pure White (#FFFFFF)
+      // 3. Right Stripe: Emerald Green (#008751)
+      const colors = ['#008751', '#FFFFFF', '#008751'];
+
+      for (let s = 0; s < 3; s++) {
+        const stripeStartX = -w / 2 + s * stripeW;
+        ctx.fillStyle = colors[s];
+        ctx.beginPath();
+
+        // Top edge with wave
+        const startTopY = -h / 2 + getWaveY(stripeStartX + w / 2);
+        ctx.moveTo(stripeStartX, startTopY);
+
+        const endTopY = -h / 2 + getWaveY(stripeStartX + stripeW + w / 2);
+        ctx.lineTo(stripeStartX + stripeW, endTopY);
+
+        // Right edge down
+        const endBotY = h / 2 + getWaveY(stripeStartX + stripeW + w / 2);
+        ctx.lineTo(stripeStartX + stripeW, endBotY);
+
+        // Bottom edge with wave back
+        const startBotY = h / 2 + getWaveY(stripeStartX + w / 2);
+        ctx.lineTo(stripeStartX, startBotY);
+
+        ctx.closePath();
+        ctx.fill();
       }
 
-      t += prefersReducedMotion ? 0 : 0.01;
-      const img = ctx.createImageData(w, h);
-      const d = img.data;
+      // Subtle fabric wave shadow & highlight for 3D fluttering flag realism
+      ctx.shadowBlur = 0;
+      const crestGradient = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+      const waveShift = (Math.sin(f.wavePhase) + 1) / 2;
+      crestGradient.addColorStop(0, 'rgba(0, 0, 0, 0.12)');
+      crestGradient.addColorStop(Math.max(0.1, Math.min(0.9, waveShift)), 'rgba(255, 255, 255, 0.16)');
+      crestGradient.addColorStop(1, 'rgba(0, 0, 0, 0.22)');
+      ctx.fillStyle = crestGradient;
+      ctx.fillRect(-w / 2, -h / 2 - f.waveAmp, w, h + f.waveAmp * 2);
 
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const nx = x / w;
-          const ny = y / h;
-          const dx = nx - mx;
-          const dy = ny - my;
-          const dist = Math.sqrt(dx * dx + dy * dy);
+      // Fine golden pole string / edge highlight on left
+      ctx.strokeStyle = 'rgba(200, 169, 106, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-w / 2, -h / 2 + getWaveY(0));
+      ctx.lineTo(-w / 2, h / 2 + getWaveY(0));
+      ctx.stroke();
 
-          // Radiant interactive ripple waves from pointer & touch
-          const ripple = Math.sin(dist * 24 - t * 4) * Math.exp(-dist * 3.8) * rippleStrength;
+      ctx.restore();
+    };
 
-          // Water surface height and natural ambient swells
-          const v =
-            Math.sin(nx * 8 + t * 1.4 + Math.sin(ny * 5 + t * 0.8)) * 0.5 +
-            Math.sin(ny * 9 - t * 1.1 + Math.cos(nx * 6 - t * 0.7)) * 0.5 +
-            Math.sin((nx + ny) * 11 + t * 0.9) * 0.25 +
-            ripple * 1.1;
+    const render = () => {
+      time += 0.016;
 
-          // Radiant wave crest highlights (caustic reflection)
-          const light = Math.pow(Math.max(0, v * 0.5 + 0.5), 2.6);
+      // Pointer easing
+      if (targetMouseX > -1000) {
+        mouseX += (targetMouseX - mouseX) * 0.08;
+        mouseY += (targetMouseY - mouseY) * 0.08;
+      } else {
+        mouseX = -9999;
+        mouseY = -9999;
+      }
 
-          // Nigerian Flag reflection: wave undulation stretches and wobbles the vertical bands
-          const warp =
-            Math.sin(ny * 8 + t * 1.2) * 0.028 +
-            Math.sin(nx * 6 - t * 0.9 + ny * 3.5) * 0.02 +
-            ripple * 0.04;
-          const fx = nx + warp;
+      // 1. Deep black space background
+      ctx.fillStyle = '#020406';
+      ctx.fillRect(0, 0, width, height);
 
-          // 3 vertical bands: Green (0..1/3) | White (1/3..2/3) | Green (2/3..1)
-          const e1 = sm(0.333 - 0.045, 0.333 + 0.045, fx);
-          const e2 = sm(0.667 - 0.045, 0.667 + 0.045, fx);
-          const white = e1 * (1 - e2);
-          const green = 1 - white;
+      // Subtle space radial illumination in center
+      const radial = ctx.createRadialGradient(
+        width * 0.5,
+        height * 0.45,
+        width * 0.05,
+        width * 0.5,
+        height * 0.5,
+        Math.max(width, height) * 0.8
+      );
+      radial.addColorStop(0, 'rgba(5, 12, 8, 0.4)');
+      radial.addColorStop(0.6, 'rgba(2, 4, 6, 0.7)');
+      radial.addColorStop(1, 'rgba(0, 0, 0, 0.95)');
+      ctx.fillStyle = radial;
+      ctx.fillRect(0, 0, width, height);
 
-          // Shading: wave modulation + radiant highlights + edge vignettes
-          const waveShade = (0.55 + v * 0.38 + light * 0.8) * sm(0.0, 0.18, ny) * (1 - sm(0.85, 1.0, ny) * 0.45);
-          const specular = light * 95;
+      // 2. Render twinkling stars in deep space
+      stars.forEach((star) => {
+        star.alpha = star.baseAlpha + Math.sin(time * 3 + star.x) * (star.baseAlpha * 0.4);
+        ctx.fillStyle = star.color;
+        ctx.globalAlpha = Math.max(0.1, Math.min(1, star.alpha));
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
 
-          // Rich Nigerian Flag Emerald Green (#008751) calibration
-          // Green channel: radiant emerald, modulated by water wave shading
-          const greenR = 2 + specular * 0.12;
-          const greenG = Math.min(255, 32 + 135 * waveShade * 0.85 + specular * 0.75);
-          const greenB = Math.min(255, 20 + 81 * waveShade * 0.85 + specular * 0.45);
+      // 3. Update and render moving small Nigeria flags
+      const margin = 80;
 
-          // Center White Band calibration: luminous ivory/pearl white
-          const whiteR = Math.min(255, 45 + 185 * waveShade * 0.8 + specular * 0.85);
-          const whiteG = Math.min(255, 48 + 195 * waveShade * 0.8 + specular * 0.85);
-          const whiteB = Math.min(255, 46 + 190 * waveShade * 0.8 + specular * 0.85);
+      flags.forEach((f) => {
+        if (!prefersReducedMotion) {
+          // Floating motion & wave
+          f.x += f.vx;
+          f.y += f.vy + Math.sin(time * 2 + f.floatOffset) * 0.25;
+          f.rot += f.vRot;
+          f.wavePhase += f.waveSpeed;
 
-          const i = (y * w + x) * 4;
-          d[i] = Math.round(green * greenR + white * whiteR);
-          d[i + 1] = Math.round(green * greenG + white * whiteG);
-          d[i + 2] = Math.round(green * greenB + white * whiteB);
-          d[i + 3] = 255;
+          // Gentle mouse avoidance/interaction
+          if (mouseX > -1000) {
+            const dx = f.x - mouseX;
+            const dy = f.y - mouseY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 140 && dist > 1) {
+              const pushForce = ((140 - dist) / 140) * 0.8;
+              f.x += (dx / dist) * pushForce;
+              f.y += (dy / dist) * pushForce;
+            }
+          }
+
+          // Screen wrapping across space
+          if (f.x < -margin) f.x = width + margin;
+          else if (f.x > width + margin) f.x = -margin;
+
+          if (f.y < -margin) f.y = height + margin;
+          else if (f.y > height + margin) f.y = -margin;
         }
-      }
 
-      ctx.putImageData(img, 0, 0);
-      animId = requestAnimationFrame(frame);
+        drawMiniFlag(f);
+      });
+
+      animId = requestAnimationFrame(render);
     };
 
-    frame();
+    render();
 
     return () => {
       cancelAnimationFrame(animId);
-      window.removeEventListener('resize', resize);
+      window.removeEventListener('resize', handleResize);
       window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerdown', handlePointerDown);
-      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('pointerleave', handlePointerLeave);
     };
   }, []);
 
   return (
     <>
       <canvas
-        id="water"
+        id="nigeria-space-bg"
         ref={canvasRef}
         className="fixed inset-0 w-full h-full -z-10 pointer-events-none"
-        style={{ filter: 'blur(1.2px)' }}
         aria-hidden="true"
       />
-      {/* Deep luxury vignette keeps central content readable while flag is clearly visible */}
+      {/* Subtle deep vignette overlay to maintain premium typographic clarity across the hub */}
       <div 
-        className="fixed inset-0 -z-10 pointer-events-none bg-[radial-gradient(ellipse_at_center,rgba(2,4,6,0.3)_0%,rgba(2,4,6,0.85)_100%)]" 
+        className="fixed inset-0 -z-10 pointer-events-none bg-[radial-gradient(circle_at_50%_40%,rgba(0,0,0,0)_0%,rgba(2,4,6,0.65)_70%,rgba(0,0,0,0.92)_100%)]" 
         aria-hidden="true"
       />
     </>

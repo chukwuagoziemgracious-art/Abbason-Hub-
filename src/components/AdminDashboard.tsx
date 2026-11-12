@@ -15,11 +15,14 @@ import {
   RotateCcw,
   AlertCircle,
   RefreshCw,
-  UserX
+  UserX,
+  Upload,
+  Sparkles
 } from 'lucide-react';
 import { store } from '../services/store';
 import { formatNaira, formatDate } from '../utils/currency';
 import { Product, Complaint, User } from '../types';
+import { AbbasonLogo } from './AbbasonLogo';
 
 interface AdminDashboardProps {
   isOpen: boolean;
@@ -30,7 +33,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   isOpen,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'moderation' | 'sellers' | 'disputes' | 'orders'>('moderation');
+  const [activeTab, setActiveTab] = useState<'moderation' | 'sellers' | 'disputes' | 'orders' | 'settings'>('moderation');
   const [disputeSubTab, setDisputeSubTab] = useState<'complaints' | 'overdue' | 'buyer_reports' | 'refunds' | 'ban_reviews'>('complaints');
   const [rejectionModalProduct, setRejectionModalProduct] = useState<Product | null>(null);
   const [rejectionReason, setRejectionReason] = useState('Missing clear photos / price verification required');
@@ -126,6 +129,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const res = await store.approveSellerVerification(v.id, v.userId);
       if (res.success) {
         showNotice('Seller approved! Subaccount created & pending vendor fee payment.');
+        loadQueues();
       } else if (res.mismatch) {
         setMismatchErrors((prev) => ({
           ...prev,
@@ -438,6 +442,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <Package className="w-4 h-4" />
             <span>Order & Payment Audit ({allOrders.length})</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`py-3 px-3 font-medium border-b-2 transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              activeTab === 'settings'
+                ? 'border-[#C8A96A] text-[#C8A96A] font-bold'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Brand Logo & Identity</span>
+          </button>
         </div>
 
         {/* Tab Content */}
@@ -547,10 +563,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               onClick={() => {
                                 store.rejectSellerVerification(v.id, 'Information or document could not be verified with school records', v.userId);
                                 showNotice('Seller verification rejected');
+                                loadQueues();
                               }}
                               className="flex-1 sm:flex-none px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-rose-300 font-medium text-xs cursor-pointer"
                             >
                               Reject
+                            </button>
+                            <button
+                              onClick={async () => {
+                                await store.fastVerifySeller(v.userId);
+                                showNotice(`Direct verified vendor badge activated for ${v.userName}`);
+                                loadQueues();
+                              }}
+                              className="flex-1 sm:flex-none px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs flex items-center justify-center gap-1 shadow-md cursor-pointer"
+                              title="Instantly grant Verified Vendor badge"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              <span>Direct Verify</span>
                             </button>
                             <button
                               onClick={() => handleApproveSeller(v)}
@@ -558,7 +587,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-[#C8A96A] hover:bg-[#b89858] text-black font-medium text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
                             >
                               <ShieldCheck className="w-4 h-4" />
-                              <span>{approvingSellerId === v.userId ? 'Resolving NUBAN...' : 'Verify Bank & Create Subaccount'}</span>
+                              <span>{approvingSellerId === v.userId ? 'Resolving NUBAN...' : 'Verify Bank & Subaccount'}</span>
                             </button>
                           </div>
                         </div>
@@ -1094,6 +1123,98 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: BRAND LOGO & IDENTITY */}
+          {activeTab === 'settings' && (
+            <div className="space-y-6 max-w-2xl">
+              <div className="bg-[#0B1120] border border-white/[0.08] rounded-2xl p-6 space-y-6">
+                <div>
+                  <h3 className="text-base font-serif font-medium text-[#E9E6DF] flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#C8A96A]" />
+                    Brand Logo & Visual Identity
+                  </h3>
+                  <p className="text-xs text-[#8C9399] mt-1">
+                    Manage the official Abbason Hub emblem displayed in the top header, campus switcher, navigation bar, and footer across all student sessions.
+                  </p>
+                </div>
+
+                {/* Current Logo Preview */}
+                <div className="p-5 rounded-2xl bg-[#020406] border border-[#C8A96A]/30 flex flex-col sm:flex-row items-center gap-6">
+                  <div className="p-3 rounded-2xl bg-[#0B1120] border border-white/[0.06] shadow-xl">
+                    <AbbasonLogo size="xl" showText={false} allowUpload={false} />
+                  </div>
+                  <div className="space-y-2 text-center sm:text-left flex-1">
+                    <div className="flex items-center justify-center sm:justify-start gap-2">
+                      <span className="text-lg font-serif text-[#E9E6DF]">Abbason <span className="text-[#C8A96A]">Hub</span></span>
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-[#C8A96A]/20 text-[#C8A96A] border border-[#C8A96A]/40">
+                        {store.getBrandLogoImage() !== '/logo.png' ? 'Custom Upload Active' : 'Official Logo Active'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#8C9399]">
+                      Tagline: <span className="text-[#E9E6DF]">"Everything you imagined."</span>
+                    </p>
+                    <p className="text-[11px] text-[#8C9399]/80">
+                      Official Abbason Hub brand emblem is loaded and preserved across all student sessions.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Upload or Reset Actions */}
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#C8A96A] hover:bg-[#D4B779] text-[#020406] font-medium text-xs cursor-pointer shadow-lg shadow-[#C8A96A]/10 transition-all duration-200">
+                    <Upload className="w-4 h-4" />
+                    <span>Upload New Logo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (!file.type.startsWith('image/')) {
+                          alert('Please choose a valid image file (PNG, JPG, SVG, WEBP).');
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          const result = event.target?.result as string;
+                          if (result) {
+                            store.setBrandLogoImage(result);
+                            setActionNotice('Brand logo updated and saved!');
+                            setTimeout(() => setActionNotice(null), 4000);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </label>
+
+                  {store.getBrandLogoImage() !== '/logo.png' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        store.setBrandLogoImage(null);
+                        setActionNotice('Restored official Abbason Hub logo.');
+                        setTimeout(() => setActionNotice(null), 4000);
+                      }}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 hover:text-white border border-white/[0.1] text-xs font-medium cursor-pointer transition-colors"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Restore Default Logo</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Hint */}
+                <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-[11px] text-[#8C9399] flex items-start gap-2.5">
+                  <Sparkles className="w-4 h-4 text-[#C8A96A] shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold text-[#E9E6DF]">Quick Tip:</span> You can also directly click the logo emblem in the top navbar anytime while signed in as owner to upload a new logo file immediately.
+                  </div>
+                </div>
               </div>
             </div>
           )}

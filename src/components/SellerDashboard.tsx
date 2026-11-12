@@ -100,7 +100,7 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({
   const [sellerActionFeedback, setSellerActionFeedback] = useState<string | null>(null);
 
   // Private Seller Phone State
-  const [sellerPhoneVal, setSellerPhoneVal] = useState(currentUser.phone || '');
+  const [sellerPhoneVal, setSellerPhoneVal] = useState(currentUser?.phone || '');
   const [isUpdatingPhone, setIsUpdatingPhone] = useState(false);
   const [isEditingPhone, setIsEditingPhone] = useState(false);
 
@@ -109,7 +109,7 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({
   const [agreedTimeInput, setAgreedTimeInput] = useState('');
   const [isSavingAgreedTime, setIsSavingAgreedTime] = useState(false);
 
-  const allOrders = store.getOrders(currentUser.id, 'seller');
+  const allOrders = currentUser ? store.getOrders(currentUser.id, 'seller') : [];
   const pendingHandoverOrders = allOrders.filter(
     (o) =>
       o.status === 'delivery_fee_paid' ||
@@ -119,18 +119,19 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({
       o.status === 'paid_awaiting_delivery'
   );
   const completedOrders = allOrders.filter((o) => o.status === 'paid_completed' || o.status === 'delivered');
-  const sellerProducts = store.getSellerProducts(currentUser.id);
-  const payouts = store.getPayouts().filter((p) => p.sellerId === currentUser.id);
-  const sellerReviews = store.getSellerReviews(currentUser.id);
-  const ratingSummary = store.getSellerRatingSummary(currentUser.id);
-  const isVerified = store.canUserSell(currentUser.id);
-  const sellerStrikes = store.getSellerStrikes(currentUser.id);
+  const sellerProducts = currentUser ? store.getSellerProducts(currentUser.id) : [];
+  const payouts = currentUser ? store.getPayouts().filter((p) => p.sellerId === currentUser.id) : [];
+  const sellerReviews = currentUser ? store.getSellerReviews(currentUser.id) : [];
+  const ratingSummary = currentUser ? store.getSellerRatingSummary(currentUser.id) : { average: 5.0, count: 0 };
+  const isVerified = currentUser ? store.canUserSell(currentUser.id) : false;
+  const sellerStrikes = currentUser ? store.getSellerStrikes(currentUser.id) : 0;
 
   const handleUpdateOrderStatus = async (orderId: string, status: any) => {
     await store.updateOrderStatus(orderId, status);
   };
 
   const handlePayVendorFee = async () => {
+    if (!currentUser) return;
     setIsPayingFee(true);
     try {
       await store.payVendorFee(currentUser.id);
@@ -142,6 +143,33 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({
   };
 
   if (!isOpen) return null;
+
+  if (!currentUser) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-[20px] overflow-y-auto">
+        <div 
+          className="relative w-full max-w-md rounded-[6px] bg-[#020406]/95 backdrop-blur-[24px] border border-white/[0.12] shadow-[0_40px_100px_rgba(0,0,0,0.9)] overflow-hidden my-auto p-6 text-center space-y-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-12 h-12 rounded-[4px] bg-[#C8A96A]/10 border border-[#C8A96A]/40 flex items-center justify-center text-[#C8A96A] mx-auto">
+            <Store className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-light text-[#E9E6DF] font-serif">
+            Seller Dashboard
+          </h2>
+          <p className="text-xs text-[#8C9399] font-light leading-relaxed">
+            Please sign in with your campus student account to manage your listings, incoming orders, and Paystack payouts.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 rounded-[4px] bg-[#C8A96A] hover:bg-[#d8bb7d] text-[#020406] font-semibold text-xs uppercase tracking-[0.2em] shadow transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleSavePhone = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -354,6 +382,26 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({
             >
               <Lock className="w-3.5 h-3.5 text-black" />
               <span>{isPayingFee ? 'Opening Paystack...' : `Pay ${vendorFeeStatus ? formatNaira(vendorFeeStatus.totalWithGateway) : '₦2,030'} via Paystack`}</span>
+            </button>
+          </div>
+        ) : currentUser.sellerVerificationStatus === 'pending' ? (
+          <div className="m-4 p-4 rounded-[6px] bg-amber-950/40 border border-amber-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <Clock className="w-6 h-6 text-amber-400 shrink-0 animate-pulse" />
+              <div>
+                <p className="font-medium text-white text-sm font-serif">Verification Application Under Review</p>
+                <p className="text-amber-200/80 text-xs font-light">
+                  Your student credentials and payout account details are being reviewed by the Abbason moderation team. Once approved, you can post campus listings.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (onOpenVerificationModal) onOpenVerificationModal();
+              }}
+              className="px-4 py-2 rounded-[4px] bg-white/[0.06] hover:bg-white/[0.1] text-amber-300 border border-amber-500/40 font-semibold text-xs uppercase tracking-[0.15em] shrink-0 cursor-pointer shadow transition-colors"
+            >
+              View Application
             </button>
           </div>
         ) : !isVerified ? (

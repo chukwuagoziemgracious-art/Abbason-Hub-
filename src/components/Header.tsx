@@ -36,7 +36,7 @@ export const Header: React.FC<HeaderProps> = ({
   const activeCampus = store.getActiveCampus();
   const cart = store.getCart();
   const pendingProducts = store.getPendingProducts();
-  const isVerifiedSeller = store.canUserSell(currentUser.id);
+  const isVerifiedSeller = currentUser ? store.canUserSell(currentUser.id) : false;
   const isAdmin = store.isAdminAuthenticated();
 
   const [campusDropdownOpen, setCampusDropdownOpen] = useState(false);
@@ -57,6 +57,10 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const handleSellClick = () => {
+    if (!store.isSignedIn()) {
+      onOpenAuth();
+      return;
+    }
     if (isVerifiedSeller) {
       onOpenSellerDashboard();
     } else {
@@ -105,9 +109,9 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       {/* Main Top Nav Bar */}
-      <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
+      <div className="max-w-[1200px] mx-auto px-3 sm:px-6 py-1.5 sm:py-2.5 flex items-center justify-between gap-2.5 sm:gap-4">
         {/* Logo & Brand Identity */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <AbbasonLogo size="md" showText={true} />
         </div>
 
@@ -153,20 +157,20 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Right Action Controls */}
-        <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3">
           {/* Sell on Abbason CTA - Luxury Gold Outline with slide-in fill */}
           <button
             onClick={handleSellClick}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[#C8A96A] text-[#C8A96A] hover:bg-[#C8A96A] hover:text-[#020406] text-[11px] font-medium tracking-[0.2em] uppercase transition-all duration-300 shadow-sm cursor-pointer"
+            className="flex items-center gap-1 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-lg sm:rounded-xl border border-[#C8A96A] text-[#C8A96A] hover:bg-[#C8A96A] hover:text-[#020406] text-[10px] sm:text-[11px] font-medium tracking-[0.12em] sm:tracking-[0.2em] uppercase transition-all duration-300 shadow-sm cursor-pointer shrink-0"
           >
             {isVerifiedSeller ? (
               <>
-                <Store className="w-3.5 h-3.5" />
+                <Store className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 <span>Seller Hub</span>
               </>
             ) : (
               <>
-                <PlusCircle className="w-3.5 h-3.5" />
+                <PlusCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 <span>Sell on Abbason</span>
               </>
             )}
@@ -176,10 +180,10 @@ export const Header: React.FC<HeaderProps> = ({
           {isAdmin && (
             <button
               onClick={onOpenAdminDashboard}
-              className="relative p-2 rounded-xl bg-white/[0.03] hover:bg-[#C8A96A]/15 text-[#C8A96A] border border-[#C8A96A]/40 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="relative p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-white/[0.03] hover:bg-[#C8A96A]/15 text-[#C8A96A] border border-[#C8A96A]/40 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Admin Dashboard"
             >
-              <Shield className="w-4 h-4" />
+              <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden md:inline text-xs font-medium tracking-wider uppercase">Admin</span>
               {pendingProducts.length > 0 && (
                 <span className="absolute -top-1 -right-1 bg-[#C8A96A] text-[#020406] text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
@@ -192,31 +196,41 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Shopping Basket Button */}
           <button
             onClick={onOpenCart}
-            className="relative p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] text-[#E9E6DF] border border-white/[0.08] hover:border-[#C8A96A]/50 transition-all duration-300 flex items-center justify-center cursor-pointer"
+            className="relative p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl bg-white/[0.03] hover:bg-white/[0.06] text-[#E9E6DF] border border-white/[0.08] hover:border-[#C8A96A]/50 transition-all duration-300 flex items-center justify-center cursor-pointer"
             title="Shopping Basket"
             aria-label="View basket"
           >
-            <ShoppingBag className="w-4 h-4 text-[#C8A96A]" />
+            <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#C8A96A]" />
             {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-[#C8A96A] text-[#020406] font-bold text-[9px] w-4 h-4 rounded-full flex items-center justify-center shadow">
+              <span className="absolute -top-1 -right-1 bg-[#C8A96A] text-[#020406] font-bold text-[8px] sm:text-[9px] w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full flex items-center justify-center shadow">
                 {cartCount}
               </span>
             )}
           </button>
 
-          {/* User Account / Profile */}
-          <button
-            onClick={onOpenAuth}
-            className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] hover:border-[#C8A96A]/50 text-xs text-[#E9E6DF] transition-all duration-300 cursor-pointer"
-            title={currentUser.name}
-          >
-            <div className="w-6 h-6 rounded-lg bg-[#C8A96A] text-[#020406] flex items-center justify-center text-[10px] font-bold uppercase tracking-wider shrink-0">
-              {currentUser.name.charAt(0)}
-            </div>
-            <span className="hidden lg:inline text-xs font-light text-[#E9E6DF] tracking-wide truncate max-w-[100px]">
-              {currentUser.name.split(' ')[0]}
-            </span>
-          </button>
+          {/* User Account / Profile or Sign In CTA */}
+          {store.isSignedIn() && currentUser ? (
+            <button
+              onClick={onOpenAuth}
+              className="flex items-center gap-1.5 p-1 sm:px-3 sm:py-2 rounded-lg sm:rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] hover:border-[#C8A96A]/50 text-xs text-[#E9E6DF] transition-all duration-300 cursor-pointer"
+              title={currentUser.name}
+            >
+              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md sm:rounded-lg bg-[#C8A96A] text-[#020406] flex items-center justify-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider shrink-0">
+                {currentUser.name.charAt(0)}
+              </div>
+              <span className="hidden lg:inline text-xs font-light text-[#E9E6DF] tracking-wide truncate max-w-[100px]">
+                {currentUser.name.split(' ')[0]}
+              </span>
+            </button>
+          ) : (
+            <button
+              onClick={onOpenAuth}
+              className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg sm:rounded-xl bg-[#C8A96A] hover:bg-[#D4B779] text-[#020406] text-[11px] sm:text-xs font-semibold tracking-wide shadow-sm transition-all duration-300 cursor-pointer shrink-0"
+            >
+              <User className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <span>Sign In</span>
+            </button>
+          )}
         </div>
       </div>
     </header>
